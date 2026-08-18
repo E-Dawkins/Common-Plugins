@@ -9,9 +9,6 @@
 
 AGC_GenericCharacter::AGC_GenericCharacter()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	AutoPossessPlayer = EAutoReceiveInput::Player0;
-
 #if WITH_EDITOR
 	// Add a custom section filter to property window. Note this only shows
 	// up if there is at least 1 property in one of the supported categories.
@@ -27,6 +24,14 @@ AGC_GenericCharacter::AGC_GenericCharacter()
 	// allow sub-categories via '|', so only specify top-level categories.
     Section->AddCategory("GenericCharacter");
 #endif
+
+	PrimaryActorTick.bCanEverTick = true;
+	AutoPossessPlayer = EAutoReceiveInput::Player0;
+
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		CMC->AirControl = 0.5f;
+	}
 }
 
 void AGC_GenericCharacter::OnConstruction(const FTransform& Transform)
@@ -35,6 +40,21 @@ void AGC_GenericCharacter::OnConstruction(const FTransform& Transform)
 
 	CameraComponent = GetComponentByClass<UCameraComponent>();
 }
+
+#if WITH_EDITOR
+void AGC_GenericCharacter::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	if (!PropertyChangedEvent.Property) return;
+
+	FName PropertyName = PropertyChangedEvent.Property->GetFName();
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(AGC_GenericCharacter, JumpHeight))
+	{
+		SetJumpHeight(JumpHeight);
+	}
+}
+#endif
 
 void AGC_GenericCharacter::BeginPlay()
 {
@@ -51,6 +71,17 @@ void AGC_GenericCharacter::OnCmcUpdated(float DeltaSeconds, FVector OldLocation,
 	// TODO: manipulate 'EyeHeight' here
 
 	TickCmc(DeltaSeconds, OldLocation, OldVelocity);
+}
+
+void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
+{
+	JumpHeight = NewHeight;
+
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	CHECK_VALID(CMC);
+
+	// jumpForce = sqrt(2*g*h)
+	CMC->JumpZVelocity = FMath::Sqrt(FMath::Abs(2.f * CMC->GetGravityZ() * JumpHeight));
 }
 
 void AGC_GenericCharacter::OnMove_Implementation(const FVector2D& MoveDirection)
@@ -75,5 +106,19 @@ void AGC_GenericCharacter::OnLook_Implementation(FVector2D LookDirection)
 
 	AddControllerYawInput(LookDirection.X);
 	AddControllerPitchInput(LookDirection.Y);
+}
+
+void AGC_GenericCharacter::OnJump_Implementation()
+{
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	CHECK_VALID(CMC);
+
+	// Custom jump logic, as standard Unreal jump has some annoying edge cases
+	if (JumpCurrentCount < MaxJumpCount)
+	{
+		LaunchCharacter(GetActorUpVector() * CMC->JumpZVelocity, false, true);
+
+		JumpCurrentCount++;
+	}
 }
 

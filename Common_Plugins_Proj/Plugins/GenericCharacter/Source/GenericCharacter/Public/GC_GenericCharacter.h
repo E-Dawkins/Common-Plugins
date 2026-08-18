@@ -20,6 +20,10 @@ public:
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -39,17 +43,33 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Look")
 	void OnLook(FVector2D LookDirection);
 
+	// By default, ...
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Jump")
+	void OnJump();
+
+	UFUNCTION(BlueprintCallable)
+	void SetJumpHeight(float NewHeight = 150.f);
+
 protected:
 	UPROPERTY()
 	UCameraComponent* CameraComponent;
 
 	// Multiplier applied to look input
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Look", meta = (ClampMin = "0.1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Look", meta = (ClampMin = "0.1", Units = "Times"))
 	float SensitivityMultiplier = 1.f;
 
 	// Should look input 'y' be inverted?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Look")
 	bool bInvertY = true;
+
+	// How high should a single jump reach?
+	// If you want to dynamically adjust this number, use 'SetJumpHeight'
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "0", Units = "cm"), BlueprintSetter = SetJumpHeight)
+	float JumpHeight = 150.f;
+
+	// Number of jumps allowed before needing to touch the ground again
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "1", ClampMax = "10"))
+	int32 MaxJumpCount = 1;
 
 };
 
