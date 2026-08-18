@@ -18,17 +18,38 @@ class GENERICCHARACTER_API AGC_GenericCharacter : public ACharacter
 public:
 	AGC_GenericCharacter();
 
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 protected:
 	virtual void BeginPlay() override;
 
+	UFUNCTION()
+	virtual void OnCmcUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
+
+	// Triggered at the end of every movement tick, after all physics and collision calculations, but before 'Actor::Tick'
+	UFUNCTION(BlueprintImplementableEvent, Category = "GenericCharacter", meta = (DisplayName = "Tick - CMC"))
+	void TickCmc(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
+
 public:
-	// By default this will add movement input along flattened camera right/forward vectors
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter")
+	// By default, this will add movement input along flattened camera right/forward vectors
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Move")
 	void OnMove(const FVector2D& MoveDirection);
+
+	// By default, this will add look input to yaw/pitch (x/y respectively)
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Look")
+	void OnLook(FVector2D LookDirection);
 
 protected:
 	UPROPERTY()
 	UCameraComponent* CameraComponent;
+
+	// Multiplier applied to look input
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Look", meta = (ClampMin = "0.1"))
+	float SensitivityMultiplier = 1.f;
+
+	// Should look input 'y' be inverted?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Look")
+	bool bInvertY = true;
 
 };
 

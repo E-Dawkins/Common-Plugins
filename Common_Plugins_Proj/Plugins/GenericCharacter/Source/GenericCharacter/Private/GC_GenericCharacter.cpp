@@ -5,6 +5,7 @@
 
 // Unreal
 #include "Camera/CameraComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 AGC_GenericCharacter::AGC_GenericCharacter()
 {
@@ -28,22 +29,51 @@ AGC_GenericCharacter::AGC_GenericCharacter()
 #endif
 }
 
+void AGC_GenericCharacter::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	CameraComponent = GetComponentByClass<UCameraComponent>();
+}
+
 void AGC_GenericCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
-	CameraComponent = GetComponentByClass<UCameraComponent>();
-	CHECK_VALID(CameraComponent);
+
+	// Bind callbacks
+	{
+		OnCharacterMovementUpdated.AddDynamic(this, &AGC_GenericCharacter::OnCmcUpdated);
+	}
+}
+
+void AGC_GenericCharacter::OnCmcUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
+{
+	// TODO: manipulate 'EyeHeight' here
+
+	TickCmc(DeltaSeconds, OldLocation, OldVelocity);
 }
 
 void AGC_GenericCharacter::OnMove_Implementation(const FVector2D& MoveDirection)
 {
 	CHECK_VALID(CameraComponent);
 
-	const FVector FlattenedRight = FVector::VectorPlaneProject(CameraComponent->GetRightVector(), FVector::UpVector);
-	const FVector FlattenedForward = FVector::VectorPlaneProject(CameraComponent->GetForwardVector(), FVector::UpVector);
+	FVector FlattenedRight = FVector::VectorPlaneProject(CameraComponent->GetRightVector(), FVector::UpVector);
+	FVector FlattenedForward = FVector::VectorPlaneProject(CameraComponent->GetForwardVector(), FVector::UpVector);
+
+	// Normalize these, otherwise camera pitch affects move speed
+	FlattenedRight.Normalize();
+	FlattenedForward.Normalize();
 
 	AddMovementInput(FlattenedRight, MoveDirection.X);
 	AddMovementInput(FlattenedForward, MoveDirection.Y);
+}
+
+void AGC_GenericCharacter::OnLook_Implementation(FVector2D LookDirection)
+{
+	LookDirection *= SensitivityMultiplier;
+	LookDirection.Y *= (bInvertY ? -1.f : 1.f);
+
+	AddControllerYawInput(LookDirection.X);
+	AddControllerPitchInput(LookDirection.Y);
 }
 
