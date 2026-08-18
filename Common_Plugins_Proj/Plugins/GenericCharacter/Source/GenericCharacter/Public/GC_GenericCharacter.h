@@ -43,10 +43,11 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Look")
 	void OnLook(FVector2D LookDirection);
 
-	// By default, ...
+	// By default, launches character upwards to reach desired jump height
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Jump")
 	void OnJump();
 
+	// Set jump height, and calculate jump force appropriately
 	UFUNCTION(BlueprintCallable)
 	void SetJumpHeight(float NewHeight = 150.f);
 
@@ -63,7 +64,6 @@ protected:
 	bool bInvertY = true;
 
 	// How high should a single jump reach?
-	// If you want to dynamically adjust this number, use 'SetJumpHeight'
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "0", Units = "cm"), BlueprintSetter = SetJumpHeight)
 	float JumpHeight = 150.f;
 
