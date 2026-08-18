@@ -4,14 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "GC_GenericCharacter.generated.h"
 
-// Unreal classes
+// Unreal
 class UCameraComponent;
-class UInputMappingContext;
-
-// GC classes
-class UGC_InputActions;
 
 UCLASS(meta = (DisplayName = "Generic Character"))
 class GENERICCHARACTER_API AGC_GenericCharacter : public ACharacter
@@ -25,25 +22,12 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
-protected:
-	UFUNCTION(BlueprintImplementableEvent, Category = "GenericCharacter|Input", meta = (DisplayName = "Input - Move"))
-	void Input_Move_BP(const FInputActionValue& Value);
-	void Input_Move_Native(const FInputActionValue& Value);
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter")
+	void OnMove(const FVector2D& MoveDirection);
 
 protected:
 	UPROPERTY()
 	UCameraComponent* CameraComponent;
-
-protected:
-	// Default input mapping context to add in 'BeginPlay'
-	UPROPERTY(EditDefaultsOnly, Category = "GenericCharacter|Input", meta = (DisplayName = "Default IMC"))
-	UInputMappingContext* DefaultImc;
-
-	// Data asset containing all our input actions
-	UPROPERTY(EditDefaultsOnly, Category = "GenericCharacter|Input")
-	UGC_InputActions* InputActions;
 
 };
 
