@@ -22,6 +22,7 @@ protected:
 	virtual void BeginPlay() override;
 
 public:
+	// By default this will add movement input along flattened camera right/forward vectors
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter")
 	void OnMove(const FVector2D& MoveDirection);
 

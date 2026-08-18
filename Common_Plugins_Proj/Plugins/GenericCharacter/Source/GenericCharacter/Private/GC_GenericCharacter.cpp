@@ -38,7 +38,12 @@ void AGC_GenericCharacter::BeginPlay()
 
 void AGC_GenericCharacter::OnMove_Implementation(const FVector2D& MoveDirection)
 {
-	AddMovementInput(GetActorRightVector(), MoveDirection.X);
-	AddMovementInput(GetActorForwardVector(), MoveDirection.Y);
+	CHECK_VALID(CameraComponent);
+
+	const FVector FlattenedRight = FVector::VectorPlaneProject(CameraComponent->GetRightVector(), FVector::UpVector);
+	const FVector FlattenedForward = FVector::VectorPlaneProject(CameraComponent->GetForwardVector(), FVector::UpVector);
+
+	AddMovementInput(FlattenedRight, MoveDirection.X);
+	AddMovementInput(FlattenedForward, MoveDirection.Y);
 }
 
