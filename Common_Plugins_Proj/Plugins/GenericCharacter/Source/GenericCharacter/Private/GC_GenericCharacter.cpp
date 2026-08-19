@@ -89,6 +89,28 @@ void AGC_GenericCharacter::RecalculateBaseEyeHeight()
 	// Do not recalculate, as we manually track eye height
 }
 
+bool AGC_GenericCharacter::CheckMovementCapability(EGC_MovementCapability CapabilityToCheck) const
+{
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	if (!IsValid(CMC))
+	{
+		return false;
+	}
+
+	switch (CapabilityToCheck)
+	{
+		case EGC_MovementCapability::Crouch: return CMC->CanEverCrouch();
+		case EGC_MovementCapability::Jump: return CMC->CanEverJump();
+		case EGC_MovementCapability::Walk: return CMC->CanEverMoveOnGround();
+		case EGC_MovementCapability::Swim: return CMC->CanEverSwim();
+		case EGC_MovementCapability::Fly: return CMC->CanEverFly();
+		default:
+		{
+			return false;
+		}
+	}
+}
+
 void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
 {
 	JumpHeight = NewHeight;
@@ -200,6 +222,12 @@ void AGC_GenericCharacter::OnLook_Implementation(FVector2D LookDirection)
 
 void AGC_GenericCharacter::OnJump_Implementation()
 {
+	// Double-check jumping is enabled
+	if (!CheckMovementCapability(EGC_MovementCapability::Jump))
+	{
+		return;
+	}
+
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
 	CHECK_VALID(CMC);
 
@@ -215,12 +243,9 @@ void AGC_GenericCharacter::OnJump_Implementation()
 void AGC_GenericCharacter::OnStartCrouch_Implementation()
 {
 	// Double-check crouching is enabled
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	if (!CheckMovementCapability(EGC_MovementCapability::Crouch))
 	{
-		if (!CMC->CanEverCrouch())
-		{
-			return;
-		}
+		return;
 	}
 
 	CanCrouch();
@@ -233,12 +258,9 @@ void AGC_GenericCharacter::OnStartCrouch_Implementation()
 void AGC_GenericCharacter::OnEndCrouch_Implementation()
 {
 	// Double-check crouching is enabled
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	if (!CheckMovementCapability(EGC_MovementCapability::Crouch))
 	{
-		if (!CMC->CanEverCrouch())
-		{
-			return;
-		}
+		return;
 	}
 
 	// Because of needing crouch interp order to be exact,

@@ -19,6 +19,16 @@ enum class EGC_CrouchState : uint8
 	InterpToUncrouched,
 };
 
+UENUM(BlueprintType)
+enum class EGC_MovementCapability : uint8
+{
+	Crouch,
+	Jump,
+	Walk,
+	Swim,
+	Fly
+};
+
 UCLASS(meta = (DisplayName = "Generic Character"))
 class GENERICCHARACTER_API AGC_GenericCharacter : public ACharacter
 {
@@ -45,6 +55,10 @@ protected:
 
 	virtual FVector GetPawnViewLocation() const override;
 	virtual void RecalculateBaseEyeHeight() override;
+
+public:
+	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Helpers")
+	bool CheckMovementCapability(EGC_MovementCapability CapabilityToCheck) const;
 
 public:
 	// By default, this will add movement input along flattened camera right/forward vectors
