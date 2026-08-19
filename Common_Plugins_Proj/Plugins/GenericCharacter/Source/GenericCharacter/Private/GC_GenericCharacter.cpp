@@ -31,6 +31,8 @@ AGC_GenericCharacter::AGC_GenericCharacter()
 	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
 	{
 		CMC->AirControl = 0.5f;
+		CMC->bCanWalkOffLedgesWhenCrouching = true;
+		CMC->NavAgentProps.bCanCrouch = true;
 	}
 }
 
@@ -39,6 +41,9 @@ void AGC_GenericCharacter::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 
 	CameraComponent = GetComponentByClass<UCameraComponent>();
+
+	// Store this initially so that 'GetPawnViewLocation' is corrected for first frame
+	EyeHeightFromFeet = GetSimpleCollisionHalfHeight() + BaseEyeHeight;
 }
 
 #if WITH_EDITOR
@@ -68,9 +73,20 @@ void AGC_GenericCharacter::BeginPlay()
 
 void AGC_GenericCharacter::OnCmcUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
 {
-	// TODO: manipulate 'EyeHeight' here
+	TickCrouchState(DeltaSeconds);
 
 	TickCmc(DeltaSeconds, OldLocation, OldVelocity);
+}
+
+FVector AGC_GenericCharacter::GetPawnViewLocation() const
+{
+	const float EyeHeightFromCenter = EyeHeightFromFeet - GetSimpleCollisionHalfHeight();
+	return GetActorLocation() + (GetActorUpVector() * EyeHeightFromCenter);
+}
+
+void AGC_GenericCharacter::RecalculateBaseEyeHeight()
+{
+	// Do not recalculate, as we manually track eye height
 }
 
 void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
@@ -82,6 +98,80 @@ void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
 
 	// jumpForce = sqrt(2*g*h)
 	CMC->JumpZVelocity = FMath::Sqrt(FMath::Abs(2.f * CMC->GetGravityZ() * JumpHeight));
+}
+
+void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
+{
+	switch (CrouchState)
+	{
+		case EGC_CrouchState::Crouched:
+		{
+			if (!bIsCrouched)
+			{
+				Crouch();
+			}
+
+			break;
+		}
+		case EGC_CrouchState::InterpToCrouched:
+		{
+			InterpCrouch(DeltaSeconds);
+
+			break;
+		}
+		case EGC_CrouchState::InterpToUncrouched:
+		{
+			InterpCrouch(-DeltaSeconds);
+
+			break;
+		}
+	}
+}
+
+void AGC_GenericCharacter::InterpCrouch(float DeltaSeconds)
+{
+	CrouchTime += DeltaSeconds;
+
+	float CrouchPercent = FMath::Clamp(CrouchTime / CrouchDuration, 0.f, 1.f);
+
+	if (CrouchPercent == 1.f)
+	{
+		CrouchState = EGC_CrouchState::Crouched;
+		CrouchTime = CrouchDuration;
+	}
+	else if (CrouchPercent == 0.f)
+	{
+		CrouchState = EGC_CrouchState::Uncrouched;
+		CrouchTime = 0.f;
+	}
+
+	// Interp eye height
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		float BaseEyeHeightFromFeet = GetDefaultHalfHeight() + BaseEyeHeight;
+		float CrouchedEyeHeightFromFeet = CMC->CrouchedHalfHeight + CrouchedEyeHeight;
+
+		// If valid, use curve to map time/height percentages
+		if (CrouchState == EGC_CrouchState::InterpToCrouched && IsValid(EnterCrouchCurve))
+		{
+			CrouchPercent = EnterCrouchCurve->GetFloatValue(CrouchPercent);
+		}
+		else if (CrouchState == EGC_CrouchState::InterpToUncrouched && IsValid(ExitCrouchCurve))
+		{
+			CrouchPercent = ExitCrouchCurve->GetFloatValue(1.f - CrouchPercent);
+		}
+
+		EyeHeightFromFeet = FMath::Lerp(BaseEyeHeightFromFeet, CrouchedEyeHeightFromFeet, CrouchPercent);
+	}
+}
+
+void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	// Interp after Unreal has scaled our capsule to standing height.
+	// This avoids any possible eye height clipping issues
+	CrouchState = EGC_CrouchState::InterpToUncrouched;
 }
 
 void AGC_GenericCharacter::OnMove_Implementation(const FVector2D& MoveDirection)
@@ -119,6 +209,66 @@ void AGC_GenericCharacter::OnJump_Implementation()
 		LaunchCharacter(GetActorUpVector() * CMC->JumpZVelocity, false, true);
 
 		JumpCurrentCount++;
+	}
+}
+
+void AGC_GenericCharacter::OnStartCrouch_Implementation()
+{
+	// Double-check crouching is enabled
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		if (!CMC->CanEverCrouch())
+		{
+			return;
+		}
+	}
+
+	CanCrouch();
+
+	// Interp before Unreal has scaled our capsule to crouched height.
+	// This avoids any possible eye height clipping issues
+	CrouchState = EGC_CrouchState::InterpToCrouched;
+}
+
+void AGC_GenericCharacter::OnEndCrouch_Implementation()
+{
+	// Double-check crouching is enabled
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		if (!CMC->CanEverCrouch())
+		{
+			return;
+		}
+	}
+
+	// Because of needing crouch interp order to be exact,
+	// if we are mid-way crouched do not call 'UnCrouch' yet
+	if (CrouchState == EGC_CrouchState::Crouched)
+	{
+		UnCrouch();
+	}
+	else
+	{
+		CrouchState = EGC_CrouchState::InterpToUncrouched;
+	}
+}
+
+void AGC_GenericCharacter::OnToggleCrouch_Implementation()
+{
+	switch (CrouchState)
+	{
+		case EGC_CrouchState::Uncrouched:
+		case EGC_CrouchState::InterpToUncrouched:
+		{
+			OnStartCrouch();
+			break;
+		}
+		case EGC_CrouchState::Crouched:
+		case EGC_CrouchState::InterpToCrouched:
+		{
+			OnEndCrouch();
+			break;
+		}
 	}
 }
 
