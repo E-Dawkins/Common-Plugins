@@ -29,6 +29,14 @@ enum class EGC_MovementCapability : uint8
 	Fly
 };
 
+UENUM(BlueprintType)
+enum class EGC_InputMode : uint8
+{
+	Hold	UMETA(ToolTip = "Hold input only"),
+	Toggle	UMETA(ToolTip = "Toggle input only"),
+	Both	UMETA(ToolTip = "Hold & Toggle input allowed")
+};
+
 UCLASS(meta = (DisplayName = "Generic Character"))
 class GENERICCHARACTER_API AGC_GenericCharacter : public ACharacter
 {
@@ -103,6 +111,24 @@ protected:
 	void InterpCrouch(float DeltaSeconds);
 #pragma endregion
 
+#pragma region Sprint
+public:
+	// By default, will check for 'Hold' or 'Both' sprint input and then set sprint state to 'true'
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Sprint")
+	void OnStartSprint();
+
+	// By default, will check for 'Hold' or 'Both' sprint input and then set sprint state to 'false'
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Sprint")
+	void OnEndSprint();
+
+	// By default, will check for 'Toggle' or 'Both' sprint input and then switch sprint state
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Sprint")
+	void OnToggleSprint();
+
+protected:
+	void SetSprintState(bool bNewState);
+#pragma endregion
+
 protected:
 	UPROPERTY()
 	UCameraComponent* CameraComponent;
@@ -122,10 +148,6 @@ protected:
 	// How high should a single jump reach?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "0", Units = "cm"), BlueprintSetter = SetJumpHeight)
 	float JumpHeight = 150.f;
-
-	// Number of jumps allowed before needing to touch the ground again
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "1", ClampMax = "10"))
-	int32 MaxJumpCount = 1;
 
 	// How long should it take to enter/exit crouch?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch", meta = (ClampMin = "0.1", ClampMax = "2.0", Units = "s"))
@@ -148,6 +170,27 @@ protected:
 	// The current crouch time (how long crouch has been going for)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Crouch|State", meta = (Units = "s"))
 	float CrouchTime = 0.f;
+
+	// The maximum ground speed when sprinting
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint", meta = (ForceUnits = "cm/s"))
+	float SprintSpeed = 800.f;
+
+	// Which input modes should sprint allow?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint")
+	EGC_InputMode SprintInput = EGC_InputMode::Both;
+
+	// Should sprint input be allowed while we are crouched?
+	// This only affects if we will be sprinting when we un-crouch
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint")
+	bool bAllowSprintWhileCrouched = false;
+
+	// The current sprint state
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Sprint|State")
+	bool bIsSprinting = false;
+
+	// The ground speed to go back to when sprint ends
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Sprint|State", meta = (ClampMin = "150.0", ForceUnits = "cm/s"))
+	float StoredWalkSpeed = 0.f;
 
 };
 

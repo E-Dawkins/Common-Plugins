@@ -42,8 +42,15 @@ void AGC_GenericCharacter::OnConstruction(const FTransform& Transform)
 
 	CameraComponent = GetComponentByClass<UCameraComponent>();
 
-	// Store this initially so that 'GetPawnViewLocation' is corrected for first frame
-	EyeHeightFromFeet = GetSimpleCollisionHalfHeight() + BaseEyeHeight;
+	// Store initial data so that on first frame everything is correct
+	{
+		EyeHeightFromFeet = GetSimpleCollisionHalfHeight() + BaseEyeHeight;
+
+		if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+		{
+			StoredWalkSpeed = CMC->MaxWalkSpeed;
+		}
+	}
 }
 
 #if WITH_EDITOR
@@ -122,80 +129,6 @@ void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
 	CMC->JumpZVelocity = FMath::Sqrt(FMath::Abs(2.f * CMC->GetGravityZ() * JumpHeight));
 }
 
-void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
-{
-	switch (CrouchState)
-	{
-		case EGC_CrouchState::Crouched:
-		{
-			if (!bIsCrouched)
-			{
-				Crouch();
-			}
-
-			break;
-		}
-		case EGC_CrouchState::InterpToCrouched:
-		{
-			InterpCrouch(DeltaSeconds);
-
-			break;
-		}
-		case EGC_CrouchState::InterpToUncrouched:
-		{
-			InterpCrouch(-DeltaSeconds);
-
-			break;
-		}
-	}
-}
-
-void AGC_GenericCharacter::InterpCrouch(float DeltaSeconds)
-{
-	CrouchTime += DeltaSeconds;
-
-	float CrouchPercent = FMath::Clamp(CrouchTime / CrouchDuration, 0.f, 1.f);
-
-	if (CrouchPercent == 1.f)
-	{
-		CrouchState = EGC_CrouchState::Crouched;
-		CrouchTime = CrouchDuration;
-	}
-	else if (CrouchPercent == 0.f)
-	{
-		CrouchState = EGC_CrouchState::Uncrouched;
-		CrouchTime = 0.f;
-	}
-
-	// Interp eye height
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
-	{
-		float BaseEyeHeightFromFeet = GetDefaultHalfHeight() + BaseEyeHeight;
-		float CrouchedEyeHeightFromFeet = CMC->CrouchedHalfHeight + CrouchedEyeHeight;
-
-		// If valid, use curve to map time/height percentages
-		if (CrouchState == EGC_CrouchState::InterpToCrouched && IsValid(EnterCrouchCurve))
-		{
-			CrouchPercent = EnterCrouchCurve->GetFloatValue(CrouchPercent);
-		}
-		else if (CrouchState == EGC_CrouchState::InterpToUncrouched && IsValid(ExitCrouchCurve))
-		{
-			CrouchPercent = ExitCrouchCurve->GetFloatValue(1.f - CrouchPercent);
-		}
-
-		EyeHeightFromFeet = FMath::Lerp(BaseEyeHeightFromFeet, CrouchedEyeHeightFromFeet, CrouchPercent);
-	}
-}
-
-void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
-{
-	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
-
-	// Interp after Unreal has scaled our capsule to standing height.
-	// This avoids any possible eye height clipping issues
-	CrouchState = EGC_CrouchState::InterpToUncrouched;
-}
-
 void AGC_GenericCharacter::OnMove_Implementation(const FVector2D& MoveDirection)
 {
 	CHECK_VALID(CameraComponent);
@@ -232,7 +165,7 @@ void AGC_GenericCharacter::OnJump_Implementation()
 	CHECK_VALID(CMC);
 
 	// Custom jump logic, as standard Unreal jump has some annoying edge cases
-	if (JumpCurrentCount < MaxJumpCount)
+	if (JumpCurrentCount < JumpMaxCount)
 	{
 		LaunchCharacter(GetActorUpVector() * CMC->JumpZVelocity, false, true);
 
@@ -290,6 +223,124 @@ void AGC_GenericCharacter::OnToggleCrouch_Implementation()
 		{
 			OnEndCrouch();
 			break;
+		}
+	}
+}
+
+void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) {
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	// Interp after Unreal has scaled our capsule to standing height.
+	// This avoids any possible eye height clipping issues
+	CrouchState = EGC_CrouchState::InterpToUncrouched;
+}
+
+void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds) {
+	switch (CrouchState) {
+		case EGC_CrouchState::Crouched:
+		{
+			if (!bIsCrouched) {
+				Crouch();
+			}
+
+			break;
+		}
+		case EGC_CrouchState::InterpToCrouched:
+		{
+			InterpCrouch(DeltaSeconds);
+
+			break;
+		}
+		case EGC_CrouchState::InterpToUncrouched:
+		{
+			InterpCrouch(-DeltaSeconds);
+
+			break;
+		}
+	}
+}
+
+void AGC_GenericCharacter::InterpCrouch(float DeltaSeconds) {
+	CrouchTime += DeltaSeconds;
+
+	float CrouchPercent = FMath::Clamp(CrouchTime / CrouchDuration, 0.f, 1.f);
+
+	if (CrouchPercent == 1.f) {
+		CrouchState = EGC_CrouchState::Crouched;
+		CrouchTime = CrouchDuration;
+	}
+	else if (CrouchPercent == 0.f) {
+		CrouchState = EGC_CrouchState::Uncrouched;
+		CrouchTime = 0.f;
+	}
+
+	// Interp eye height
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC)) {
+		float BaseEyeHeightFromFeet = GetDefaultHalfHeight() + BaseEyeHeight;
+		float CrouchedEyeHeightFromFeet = CMC->CrouchedHalfHeight + CrouchedEyeHeight;
+
+		// If valid, use curve to map time/height percentages
+		if (CrouchState == EGC_CrouchState::InterpToCrouched && IsValid(EnterCrouchCurve)) {
+			CrouchPercent = EnterCrouchCurve->GetFloatValue(CrouchPercent);
+		}
+		else if (CrouchState == EGC_CrouchState::InterpToUncrouched && IsValid(ExitCrouchCurve)) {
+			CrouchPercent = ExitCrouchCurve->GetFloatValue(1.f - CrouchPercent);
+		}
+
+		EyeHeightFromFeet = FMath::Lerp(BaseEyeHeightFromFeet, CrouchedEyeHeightFromFeet, CrouchPercent);
+	}
+}
+
+void AGC_GenericCharacter::OnStartSprint_Implementation()
+{
+	if (SprintInput != EGC_InputMode::Toggle)
+	{
+		SetSprintState(true);
+	}
+}
+
+void AGC_GenericCharacter::OnEndSprint_Implementation()
+{
+	if (SprintInput != EGC_InputMode::Toggle)
+	{
+		SetSprintState(false);
+	}
+}
+
+void AGC_GenericCharacter::OnToggleSprint_Implementation()
+{
+	if (SprintInput != EGC_InputMode::Hold)
+	{
+		SetSprintState(!bIsSprinting);
+	}
+}
+
+void AGC_GenericCharacter::SetSprintState(bool bNewState)
+{
+	// Already in the correct sprint state
+	if (bIsSprinting == bNewState)
+	{
+		return;
+	}
+
+	// We are crouched, but sprint is blocked while crouching
+	if (CrouchState != EGC_CrouchState::Uncrouched && !bAllowSprintWhileCrouched)
+	{
+		return;
+	}
+
+	bIsSprinting = bNewState;
+
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+	{
+		if (bIsSprinting) // enter sprint
+		{
+			StoredWalkSpeed = CMC->MaxWalkSpeed;
+			CMC->MaxWalkSpeed = SprintSpeed;
+		}
+		else // exit sprint
+		{
+			CMC->MaxWalkSpeed = StoredWalkSpeed;
 		}
 	}
 }
