@@ -118,6 +118,16 @@ bool AGC_GenericCharacter::CheckMovementCapability(EGC_MovementCapability Capabi
 	}
 }
 
+bool AGC_GenericCharacter::IsCharacterFalling() const
+{
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		return CMC->IsFalling();
+	}
+
+	return false;
+}
+
 void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
 {
 	JumpHeight = NewHeight;
@@ -207,12 +217,14 @@ void AGC_GenericCharacter::OnToggleCrouch_Implementation()
 	{
 		case EGC_CrouchState::Uncrouched:
 		case EGC_CrouchState::InterpToUncrouched:
+		case EGC_CrouchState::FallingRequestUncrouched:
 		{
 			SetCrouched(true);
 			break;
 		}
 		case EGC_CrouchState::Crouched:
 		case EGC_CrouchState::InterpToCrouched:
+		case EGC_CrouchState::FallingRequestCrouched:
 		{
 			SetCrouched(false);
 			break;
@@ -231,7 +243,7 @@ void AGC_GenericCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHal
 
 	// Unreal scales the capsule slightly differently when mid-air,
 	// so we add an offset to actor location to account for this
-	if (GetCharacterMovement()->IsFalling())
+	if (IsCharacterFalling())
 	{
 		AddActorLocalOffset(-GetActorUpVector() * ScaledHalfHeightAdjust, true);
 	}
@@ -243,7 +255,7 @@ void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfH
 
 	// Unreal scales the capsule slightly differently when mid-air,
 	// so we add an offset to actor location to account for this
-	if (GetCharacterMovement()->IsFalling())
+	if (IsCharacterFalling())
 	{
 		AddActorLocalOffset(GetActorUpVector() * ScaledHalfHeightAdjust, true);
 	}
@@ -258,6 +270,23 @@ void AGC_GenericCharacter::SetCrouched(bool bNewState)
 	// Double-check crouching is enabled
 	if (!CheckMovementCapability(EGC_MovementCapability::Crouch))
 	{
+		return;
+	}
+
+	// We are falling, but crouch is blocked while falling
+	if (IsCharacterFalling() && !bAllowCrouchWhileFalling)
+	{
+		// Instead put crouch in a 'request' state, so that when
+		// we land we trigger the correct crouch interp state
+		if (bNewState)
+		{
+			CrouchState = EGC_CrouchState::FallingRequestCrouched;
+		}
+		else
+		{
+			CrouchState = EGC_CrouchState::FallingRequestUncrouched;
+		}
+
 		return;
 	}
 
@@ -313,6 +342,24 @@ void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
 		case EGC_CrouchState::InterpToUncrouched:
 		{
 			InterpCrouch(-DeltaSeconds);
+
+			break;
+		}
+		case EGC_CrouchState::FallingRequestCrouched:
+		{
+			if (!IsCharacterFalling())
+			{
+				SetCrouched(true);
+			}
+
+			break;
+		}
+		case EGC_CrouchState::FallingRequestUncrouched:
+		{
+			if (!IsCharacterFalling())
+			{
+				SetCrouched(false);
+			}
 
 			break;
 		}
@@ -396,7 +443,7 @@ void AGC_GenericCharacter::SetSprintState(bool bNewState)
 
 	bIsSprinting = bNewState;
 
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement())
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
 	{
 		if (bIsSprinting) // enter sprint
 		{

@@ -17,6 +17,8 @@ enum class EGC_CrouchState : uint8
 	InterpToCrouched,
 	Crouched,
 	InterpToUncrouched,
+	FallingRequestCrouched,
+	FallingRequestUncrouched,
 };
 
 UENUM(BlueprintType)
@@ -68,6 +70,10 @@ public:
 	// Checks if the passed in movement capability is enabled on the movement component
 	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Helpers")
 	bool CheckMovementCapability(EGC_MovementCapability CapabilityToCheck) const;
+
+	// Checks if movement component is valid, then gets its' falling state. Defaults to false.
+	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Helpers")
+	bool IsCharacterFalling() const;
 
 public:
 	// By default, this will add movement input along flattened camera right/forward vectors
@@ -163,6 +169,11 @@ protected:
 	// Which input modes should crouch allow?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
 	EGC_InputMode CrouchInput = EGC_InputMode::Both;
+
+	// Should crouch input be allowed while we are mid-air?
+	// If false, crouch state will be corrected when we land
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
+	bool bAllowCrouchWhileFalling = false;
 
 	// How long should it take to enter/exit crouch?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch", meta = (ClampMin = "0.1", ClampMax = "2.0", Units = "s"))
