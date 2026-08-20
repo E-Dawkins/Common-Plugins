@@ -91,16 +91,16 @@ public:
 
 #pragma region Crouch
 public:
-	// By default, sets crouch state to 'InterpToCrouched'
+	// By default, will check for 'Hold' or 'Both' crouch input then set crouch state to 'InterpToCrouched'
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Crouch")
 	void OnStartCrouch();
 
-	// By default, sets crouch state to 'InterpToUncrouched' if part-way
-	// through crouch, or defaults to standard Unreal 'UnCrouch'
+	// By default, will check for 'Hold' or 'Both' crouch input then set crouch state to
+	// 'InterpToUncrouched' if part-way through crouch, or default to standard Unreal 'UnCrouch'
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Crouch")
 	void OnEndCrouch();
 
-	// By default, calls 'OnStartCrouch' or 'OnEndCrouch' depending on current crouch state
+	// By default, will check for 'Toggle' or 'Both' crouch input then switch crouch state
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Crouch")
 	void OnToggleCrouch();
 
@@ -111,6 +111,7 @@ public:
 protected:
 	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 
+	void SetCrouched(bool bNewState);
 	// Controls crouch state machine
 	void TickCrouchState(float DeltaSeconds);
 	void InterpCrouch(float DeltaSeconds);
@@ -158,6 +159,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump")
 	bool bAllowJumpWhileCrouched = false;
 
+	// Which input modes should crouch allow?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
+	EGC_InputMode CrouchInput = EGC_InputMode::Both;
+
 	// How long should it take to enter/exit crouch?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch", meta = (ClampMin = "0.1", ClampMax = "2.0", Units = "s"))
 	float CrouchDuration = 0.3f;
@@ -180,13 +185,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Crouch|State", meta = (Units = "s"))
 	float CrouchTime = 0.f;
 
-	// The maximum ground speed when sprinting
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint", meta = (ForceUnits = "cm/s"))
-	float SprintSpeed = 800.f;
-
 	// Which input modes should sprint allow?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint")
 	EGC_InputMode SprintInput = EGC_InputMode::Both;
+
+	// The maximum ground speed when sprinting
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint", meta = (ForceUnits = "cm/s"))
+	float SprintSpeed = 800.f;
 
 	// Should sprint input be allowed while we are crouched?
 	// This only affects if we will be sprinting when we un-crouch

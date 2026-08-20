@@ -181,53 +181,40 @@ void AGC_GenericCharacter::OnJump_Implementation()
 
 void AGC_GenericCharacter::OnStartCrouch_Implementation()
 {
-	// Double-check crouching is enabled
-	if (!CheckMovementCapability(EGC_MovementCapability::Crouch))
+	if (CrouchInput != EGC_InputMode::Toggle)
 	{
-		return;
+		SetCrouched(true);
 	}
-
-	CanCrouch();
-
-	// Interp before Unreal has scaled our capsule to crouched height.
-	// This avoids any possible eye height clipping issues
-	CrouchState = EGC_CrouchState::InterpToCrouched;
 }
 
 void AGC_GenericCharacter::OnEndCrouch_Implementation()
 {
-	// Double-check crouching is enabled
-	if (!CheckMovementCapability(EGC_MovementCapability::Crouch))
+	if (CrouchInput != EGC_InputMode::Toggle)
 	{
-		return;
-	}
-
-	// Because of needing crouch interp order to be exact,
-	// if we are mid-way crouched do not call 'UnCrouch' yet
-	if (CrouchState == EGC_CrouchState::Crouched)
-	{
-		UnCrouch();
-	}
-	else
-	{
-		CrouchState = EGC_CrouchState::InterpToUncrouched;
+		SetCrouched(false);
 	}
 }
 
 void AGC_GenericCharacter::OnToggleCrouch_Implementation()
 {
+	// Check toggle input is allowed
+	if (CrouchInput == EGC_InputMode::Hold)
+	{
+		return;
+	}
+
 	switch (CrouchState)
 	{
 		case EGC_CrouchState::Uncrouched:
 		case EGC_CrouchState::InterpToUncrouched:
 		{
-			OnStartCrouch();
+			SetCrouched(true);
 			break;
 		}
 		case EGC_CrouchState::Crouched:
 		case EGC_CrouchState::InterpToCrouched:
 		{
-			OnEndCrouch();
+			SetCrouched(false);
 			break;
 		}
 	}
@@ -238,7 +225,8 @@ bool AGC_GenericCharacter::IsInCrouchedState() const
 	return CrouchState != EGC_CrouchState::Uncrouched;
 }
 
-void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) {
+void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
 	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
 
 	// Interp after Unreal has scaled our capsule to standing height.
@@ -246,11 +234,43 @@ void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfH
 	CrouchState = EGC_CrouchState::InterpToUncrouched;
 }
 
-void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds) {
-	switch (CrouchState) {
+void AGC_GenericCharacter::SetCrouched(bool bNewState)
+{
+	// Double-check crouching is enabled
+	if (!CheckMovementCapability(EGC_MovementCapability::Crouch))
+	{
+		return;
+	}
+
+	if (bNewState)
+	{
+		// Interp before Unreal has scaled our capsule to crouched height.
+		// This avoids any possible eye height clipping issues
+		CrouchState = EGC_CrouchState::InterpToCrouched;
+	}
+	else
+	{
+		// Because of needing crouch interp order to be exact,
+		// if we are mid-way crouched do not call 'UnCrouch' yet
+		if (CrouchState == EGC_CrouchState::Crouched)
+		{
+			UnCrouch();
+		}
+		else
+		{
+			CrouchState = EGC_CrouchState::InterpToUncrouched;
+		}
+	}
+}
+
+void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
+{
+	switch (CrouchState)
+	{
 		case EGC_CrouchState::Crouched:
 		{
-			if (!bIsCrouched) {
+			if (!bIsCrouched)
+			{
 				Crouch();
 			}
 
@@ -271,30 +291,36 @@ void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds) {
 	}
 }
 
-void AGC_GenericCharacter::InterpCrouch(float DeltaSeconds) {
+void AGC_GenericCharacter::InterpCrouch(float DeltaSeconds)
+{
 	CrouchTime += DeltaSeconds;
 
 	float CrouchPercent = FMath::Clamp(CrouchTime / CrouchDuration, 0.f, 1.f);
 
-	if (CrouchPercent == 1.f) {
+	if (CrouchPercent == 1.f)
+	{
 		CrouchState = EGC_CrouchState::Crouched;
 		CrouchTime = CrouchDuration;
 	}
-	else if (CrouchPercent == 0.f) {
+	else if (CrouchPercent == 0.f)
+	{
 		CrouchState = EGC_CrouchState::Uncrouched;
 		CrouchTime = 0.f;
 	}
 
 	// Interp eye height
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC)) {
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
 		float BaseEyeHeightFromFeet = GetDefaultHalfHeight() + BaseEyeHeight;
 		float CrouchedEyeHeightFromFeet = CMC->CrouchedHalfHeight + CrouchedEyeHeight;
 
 		// If valid, use curve to map time/height percentages
-		if (CrouchState == EGC_CrouchState::InterpToCrouched && IsValid(EnterCrouchCurve)) {
+		if (CrouchState == EGC_CrouchState::InterpToCrouched && IsValid(EnterCrouchCurve))
+		{
 			CrouchPercent = EnterCrouchCurve->GetFloatValue(CrouchPercent);
 		}
-		else if (CrouchState == EGC_CrouchState::InterpToUncrouched && IsValid(ExitCrouchCurve)) {
+		else if (CrouchState == EGC_CrouchState::InterpToUncrouched && IsValid(ExitCrouchCurve))
+		{
 			CrouchPercent = ExitCrouchCurve->GetFloatValue(1.f - CrouchPercent);
 		}
 
