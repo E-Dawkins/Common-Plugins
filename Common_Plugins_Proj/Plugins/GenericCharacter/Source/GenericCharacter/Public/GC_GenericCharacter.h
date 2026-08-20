@@ -109,6 +109,7 @@ public:
 	bool IsInCrouchedState() const;
 
 protected:
+	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 
 	void SetCrouched(bool bNewState);

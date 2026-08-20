@@ -225,9 +225,28 @@ bool AGC_GenericCharacter::IsInCrouchedState() const
 	return CrouchState != EGC_CrouchState::Uncrouched;
 }
 
+void AGC_GenericCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	// Unreal scales the capsule slightly differently when mid-air,
+	// so we add an offset to actor location to account for this
+	if (GetCharacterMovement()->IsFalling())
+	{
+		AddActorLocalOffset(-GetActorUpVector() * ScaledHalfHeightAdjust, true);
+	}
+}
+
 void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
 	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	// Unreal scales the capsule slightly differently when mid-air,
+	// so we add an offset to actor location to account for this
+	if (GetCharacterMovement()->IsFalling())
+	{
+		AddActorLocalOffset(GetActorUpVector() * ScaledHalfHeightAdjust, true);
+	}
 
 	// Interp after Unreal has scaled our capsule to standing height.
 	// This avoids any possible eye height clipping issues
