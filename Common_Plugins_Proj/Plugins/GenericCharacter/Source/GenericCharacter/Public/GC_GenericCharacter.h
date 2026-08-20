@@ -95,8 +95,8 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Crouch")
 	void OnStartCrouch();
 
-	// By default, will check for 'Hold' or 'Both' crouch input then set crouch state to
-	// 'InterpToUncrouched' if part-way through crouch, or default to standard Unreal 'UnCrouch'
+	// By default, will check for 'Hold' or 'Both' crouch input then set crouch state to 'InterpToUncrouched',
+	// or 'Uncrouched' to defer state logic until Unreal allows us to uncrouch (i.e. not enough head room)
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Crouch")
 	void OnEndCrouch();
 

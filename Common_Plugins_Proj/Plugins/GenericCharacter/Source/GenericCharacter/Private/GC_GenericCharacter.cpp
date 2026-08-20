@@ -250,14 +250,14 @@ void AGC_GenericCharacter::SetCrouched(bool bNewState)
 	}
 	else
 	{
-		// Because of needing crouch interp order to be exact,
-		// if we are mid-way crouched do not call 'UnCrouch' yet
 		if (CrouchState == EGC_CrouchState::Crouched)
 		{
-			UnCrouch();
+			// Use Unreal 'OnEndCrouch' to defer 'InterpToUncrouched' logic
+			CrouchState = EGC_CrouchState::Uncrouched;
 		}
 		else
 		{
+			// Mid-way through interp, just reverse direction
 			CrouchState = EGC_CrouchState::InterpToUncrouched;
 		}
 	}
@@ -267,6 +267,15 @@ void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
 {
 	switch (CrouchState)
 	{
+		case EGC_CrouchState::Uncrouched:
+		{
+			if (bIsCrouched)
+			{
+				UnCrouch();
+			}
+
+			break;
+		}
 		case EGC_CrouchState::Crouched:
 		{
 			if (!bIsCrouched)
