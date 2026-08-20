@@ -65,6 +65,7 @@ protected:
 	virtual void RecalculateBaseEyeHeight() override;
 
 public:
+	// Checks if the passed in movement capability is enabled on the movement component
 	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Helpers")
 	bool CheckMovementCapability(EGC_MovementCapability CapabilityToCheck) const;
 
@@ -84,7 +85,7 @@ public:
 	void OnJump();
 
 	// Set jump height, and calculate jump force appropriately
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category = "GenericCharacter|Jump")
 	void SetJumpHeight(float NewHeight = 150.f);
 #pragma endregion
 
@@ -102,6 +103,10 @@ public:
 	// By default, calls 'OnStartCrouch' or 'OnEndCrouch' depending on current crouch state
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Crouch")
 	void OnToggleCrouch();
+
+	// Checks if we are not in the 'Uncrouched' state
+	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Crouch")
+	bool IsInCrouchedState() const;
 
 protected:
 	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
@@ -148,6 +153,10 @@ protected:
 	// How high should a single jump reach?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "0", Units = "cm"), BlueprintSetter = SetJumpHeight)
 	float JumpHeight = 150.f;
+
+	// Should jump input be allowed while we are crouched?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump")
+	bool bAllowJumpWhileCrouched = false;
 
 	// How long should it take to enter/exit crouch?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch", meta = (ClampMin = "0.1", ClampMax = "2.0", Units = "s"))

@@ -161,6 +161,12 @@ void AGC_GenericCharacter::OnJump_Implementation()
 		return;
 	}
 
+	// We are crouched, but jump is blocked while crouching
+	if (IsInCrouchedState() && !bAllowJumpWhileCrouched)
+	{
+		return;
+	}
+
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
 	CHECK_VALID(CMC);
 
@@ -225,6 +231,11 @@ void AGC_GenericCharacter::OnToggleCrouch_Implementation()
 			break;
 		}
 	}
+}
+
+bool AGC_GenericCharacter::IsInCrouchedState() const
+{
+	return CrouchState != EGC_CrouchState::Uncrouched;
 }
 
 void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) {
@@ -324,7 +335,7 @@ void AGC_GenericCharacter::SetSprintState(bool bNewState)
 	}
 
 	// We are crouched, but sprint is blocked while crouching
-	if (CrouchState != EGC_CrouchState::Uncrouched && !bAllowSprintWhileCrouched)
+	if (IsInCrouchedState() && !bAllowSprintWhileCrouched)
 	{
 		return;
 	}
