@@ -112,17 +112,6 @@ bool AGC_GenericCharacter::IsCharacterFalling() const
 	return false;
 }
 
-void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
-{
-	JumpHeight = NewHeight;
-
-	UCharacterMovementComponent* CMC = GetCharacterMovement();
-	CHECK_VALID(CMC);
-
-	// jumpForce = sqrt(2*g*h)
-	CMC->JumpZVelocity = FMath::Sqrt(FMath::Abs(2.f * CMC->GetGravityZ() * JumpHeight));
-}
-
 void AGC_GenericCharacter::OnMove_Implementation(const FVector2D& MoveDirection)
 {
 	CHECK_VALID(CameraComponent);
@@ -149,27 +138,49 @@ void AGC_GenericCharacter::OnLook_Implementation(FVector2D LookDirection)
 
 void AGC_GenericCharacter::OnJump_Implementation()
 {
-	// Double-check jumping is enabled
-	if (!CheckMovementCapability(EGC_MovementCapability::Jump))
-	{
-		return;
-	}
+	Jump();
+}
 
-	// We are crouched, but jump is blocked while crouching
-	if (IsInCrouchedState() && !bAllowJumpWhileCrouched)
-	{
-		return;
-	}
+void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
+{
+	JumpHeight = NewHeight;
 
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
 	CHECK_VALID(CMC);
 
-	// Custom jump logic, as standard Unreal jump has some annoying edge cases
-	if (JumpCurrentCount < JumpMaxCount)
-	{
-		LaunchCharacter(GetActorUpVector() * CMC->JumpZVelocity, false, true);
+	// jumpForce = sqrt(2*g*h)
+	CMC->JumpZVelocity = FMath::Sqrt(FMath::Abs(2.f * CMC->GetGravityZ() * JumpHeight));
+}
 
-		JumpCurrentCount++;
+bool AGC_GenericCharacter::CanJumpInternal_Implementation() const
+{
+	// Is jump allowed while we are crouched? If not crouched, this is always true.
+	bool bJumpWhileCrouched = IsInCrouchedState()
+		? bAllowJumpWhileCrouched
+		: true;
+
+	// Offset default Unreal behaviour, as first jump usually does JumpCurrentCount += 2
+	bool bWithinJumpCount = bAllowFirstJumpWhileFalling
+		? (JumpCurrentCountPreJump < JumpMaxCount)
+		: (JumpCurrentCount < JumpMaxCount);
+
+	bool bCustomJumpRestrictions = (bJumpWhileCrouched && bWithinJumpCount);
+
+	// If our custom restrictions fail, default to normal Unreal checks
+	return bCustomJumpRestrictions || JumpIsAllowedInternal();
+}
+
+void AGC_GenericCharacter::CheckJumpInput(float DeltaTime)
+{
+	Super::CheckJumpInput(DeltaTime);
+
+	// Offset default Unreal behaviour, as first jump usually does JumpCurrentCount += 2
+	if (bAllowFirstJumpWhileFalling)
+	{
+		if (JumpCurrentCount - JumpCurrentCountPreJump > 1)
+		{
+			JumpCurrentCount--;
+		}
 	}
 }
 

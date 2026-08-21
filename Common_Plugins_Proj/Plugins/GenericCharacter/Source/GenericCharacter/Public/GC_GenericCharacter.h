@@ -86,13 +86,16 @@ public:
 
 #pragma region Jump
 public:
-	// By default, launches character upwards to reach desired jump height
+	// By default, calls normal Unreal 'Jump'
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Jump")
 	void OnJump();
 
 	// Set jump height, and calculate jump force appropriately
 	UFUNCTION(BlueprintCallable, Category = "GenericCharacter|Jump")
 	void SetJumpHeight(float NewHeight = 150.f);
+
+	virtual bool CanJumpInternal_Implementation() const;
+	virtual void CheckJumpInput(float DeltaTime);
 #pragma endregion
 
 #pragma region Crouch
@@ -161,6 +164,10 @@ protected:
 	// How high should a single jump reach?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "0", Units = "cm"), BlueprintSetter = SetJumpHeight)
 	float JumpHeight = 150.f;
+
+	// Should first jump be allowed mid-air? i.e. jump count = 2, would allow 2 mid-air jumps
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump")
+	bool bAllowFirstJumpWhileFalling = false;
 
 	// Should jump input be allowed while we are crouched?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump")
