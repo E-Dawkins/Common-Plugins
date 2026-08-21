@@ -282,15 +282,15 @@ void AGC_GenericCharacter::SetCrouched(bool bNewState)
 	}
 	else
 	{
-		if (CrouchState == EGC_CrouchState::Crouched)
-		{
-			// Use Unreal 'OnEndCrouch' to defer 'InterpToUncrouched' logic
-			CrouchState = EGC_CrouchState::Uncrouched;
-		}
-		else
+		if (CrouchState == EGC_CrouchState::InterpToCrouched)
 		{
 			// Mid-way through interp, just reverse direction
 			CrouchState = EGC_CrouchState::InterpToUncrouched;
+		}
+		else
+		{
+			// Use Unreal 'OnEndCrouch' to defer 'InterpToUncrouched' logic
+			CrouchState = EGC_CrouchState::Uncrouched;
 		}
 	}
 }
@@ -301,18 +301,18 @@ void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
 	{
 		case EGC_CrouchState::Uncrouched:
 		{
-			if (bIsCrouched)
+			if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
 			{
-				UnCrouch();
+				CMC->bWantsToCrouch = false;
 			}
 
 			break;
 		}
 		case EGC_CrouchState::Crouched:
 		{
-			if (!bIsCrouched)
+			if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
 			{
-				Crouch();
+				CMC->bWantsToCrouch = true;
 			}
 
 			break;
