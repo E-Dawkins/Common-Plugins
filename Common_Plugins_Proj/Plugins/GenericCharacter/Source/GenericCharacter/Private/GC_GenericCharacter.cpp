@@ -90,6 +90,24 @@ void AGC_GenericCharacter::OnWalkingOffLedge_Implementation(const FVector& Previ
 	}
 }
 
+void AGC_GenericCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		// Falling -> Walking = Landed. We do not use 'Landed' event as
+		// that happens while we are still in the 'Falling' state.
+		if (PrevMovementMode == EMovementMode::MOVE_Falling && CMC->MovementMode == EMovementMode::MOVE_Walking)
+		{
+			if (IsInJumpBufferWindow())
+			{
+				Jump();
+			}
+		}
+	}
+}
+
 bool AGC_GenericCharacter::CheckMovementCapability(EGC_MovementCapability CapabilityToCheck) const
 {
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
@@ -149,6 +167,11 @@ void AGC_GenericCharacter::OnLook_Implementation(FVector2D LookDirection)
 void AGC_GenericCharacter::OnJump_Implementation()
 {
 	Jump();
+
+	if (UWorld* World = GetWorld(); IsValid(World))
+	{
+		TimeJumpInputPressed = World->TimeSeconds; // stored mainly for jump buffer logic
+	}
 }
 
 void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
@@ -178,6 +201,24 @@ bool AGC_GenericCharacter::IsInCoyoteTimeWindow() const
 	// Actual coyote time check
 	double TimeSinceWalkedOffLedge = World->TimeSeconds - TimeWalkedOffLedge;
 	return (TimeSinceWalkedOffLedge <= CoyoteTimeDuration);
+}
+
+bool AGC_GenericCharacter::IsInJumpBufferWindow() const
+{
+	if (!bUseJumpBuffer) // not using jump buffer
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) // world is somehow invalid
+	{
+		return false;
+	}
+
+	// Actual jump buffer check
+	double TimeSinceWalkedOffLedge = World->TimeSeconds - TimeJumpInputPressed;
+	return (TimeSinceWalkedOffLedge <= JumpBufferDuration);
 }
 
 bool AGC_GenericCharacter::CanJumpInternal_Implementation() const

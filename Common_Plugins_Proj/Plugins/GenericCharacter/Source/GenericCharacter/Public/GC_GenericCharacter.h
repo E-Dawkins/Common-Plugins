@@ -66,6 +66,7 @@ protected:
 	virtual FVector GetPawnViewLocation() const override;
 	virtual void RecalculateBaseEyeHeight() override;
 	virtual void OnWalkingOffLedge_Implementation(const FVector& PreviousFloorImpactNormal, const FVector& PreviousFloorContactNormal, const FVector& PreviousLocation, float TimeDelta) override;
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
 
 public:
 	// Checks if the passed in movement capability is enabled on the movement component
@@ -97,6 +98,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Jump")
 	bool IsInCoyoteTimeWindow() const;
+
+	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Jump")
+	bool IsInJumpBufferWindow() const;
 
 	virtual bool CanJumpInternal_Implementation() const;
 	virtual void CheckJumpInput(float DeltaTime);
@@ -189,6 +193,19 @@ protected:
 	// How long should that window be?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (EditCondition = "bUseCoyoteTime", Units = "s", ClampMin = "0.1", ClampMax = "1.0"))
 	float CoyoteTimeDuration = 0.25f;
+
+	// Should there be a window before landing where jump input gets stored, then consumed upon landing?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (InlineEditConditionToggle))
+	bool bUseJumpBuffer = true;
+
+	// Jump buffer is a window before landing where jump input gets stored, then consumed upon landing.
+	// How long should that window be?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (EditCondition = "bUseJumpBuffer", Units = "s", ClampMin = "0.05", ClampMax = "0.5"))
+	float JumpBufferDuration = 0.125f;
+
+	// Exact 'World::TimeSeconds' that player last pressed jump input
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Jump|State")
+	double TimeJumpInputPressed = 0.f;
 
 	// Which input modes should crouch allow?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
