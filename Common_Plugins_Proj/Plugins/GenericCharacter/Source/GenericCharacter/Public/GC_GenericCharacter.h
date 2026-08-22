@@ -65,6 +65,7 @@ protected:
 
 	virtual FVector GetPawnViewLocation() const override;
 	virtual void RecalculateBaseEyeHeight() override;
+	virtual void OnWalkingOffLedge_Implementation(const FVector& PreviousFloorImpactNormal, const FVector& PreviousFloorContactNormal, const FVector& PreviousLocation, float TimeDelta) override;
 
 public:
 	// Checks if the passed in movement capability is enabled on the movement component
@@ -93,6 +94,9 @@ public:
 	// Set jump height, and calculate jump force appropriately
 	UFUNCTION(BlueprintCallable, Category = "GenericCharacter|Jump")
 	void SetJumpHeight(float NewHeight = 150.f);
+
+	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Jump")
+	bool IsInCoyoteTimeWindow() const;
 
 	virtual bool CanJumpInternal_Implementation() const;
 	virtual void CheckJumpInput(float DeltaTime);
@@ -153,6 +157,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State", meta = (Units = "cm"))
 	float EyeHeightFromFeet = 0.f;
 
+	// Exact 'World::TimeSeconds' that we walked off a ledge
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State", meta = (Units = "s"))
+	double TimeWalkedOffLedge = 0.f;
+
 	// Multiplier applied to look input
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Look", meta = (ClampMin = "0.1", Units = "Times"))
 	float SensitivityMultiplier = 1.f;
@@ -172,6 +180,15 @@ protected:
 	// Should jump input be allowed while we are crouched?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump")
 	bool bAllowJumpWhileCrouched = false;
+
+	// Should there be a window after walking off a ledge where jump is still allowed?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (InlineEditConditionToggle))
+	bool bUseCoyoteTime = true;
+
+	// Coyote time is a window after walking off a ledge where jump is still allowed.
+	// How long should that window be?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (EditCondition = "bUseCoyoteTime", Units = "s", ClampMin = "0.1", ClampMax = "1.0"))
+	float CoyoteTimeDuration = 0.25f;
 
 	// Which input modes should crouch allow?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
@@ -209,7 +226,7 @@ protected:
 	EGC_InputMode SprintInput = EGC_InputMode::Both;
 
 	// The maximum ground speed when sprinting
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint", meta = (ForceUnits = "cm/s"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint", meta = (ForceUnits = "cm/s", ClampMin = "50.0"))
 	float SprintSpeed = 800.f;
 
 	// Should sprint input be allowed while we are crouched?

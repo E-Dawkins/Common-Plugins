@@ -80,6 +80,16 @@ void AGC_GenericCharacter::RecalculateBaseEyeHeight()
 	// Do not recalculate, as we manually track eye height
 }
 
+void AGC_GenericCharacter::OnWalkingOffLedge_Implementation(const FVector& PreviousFloorImpactNormal, const FVector& PreviousFloorContactNormal, const FVector& PreviousLocation, float TimeDelta)
+{
+	Super::OnWalkingOffLedge_Implementation(PreviousFloorImpactNormal, PreviousFloorContactNormal, PreviousLocation, TimeDelta);
+
+	if (UWorld* World = GetWorld(); IsValid(World))
+	{
+		TimeWalkedOffLedge = World->TimeSeconds; // stored mainly for coyote time logic
+	}
+}
+
 bool AGC_GenericCharacter::CheckMovementCapability(EGC_MovementCapability CapabilityToCheck) const
 {
 	UCharacterMovementComponent* CMC = GetCharacterMovement();
@@ -152,6 +162,24 @@ void AGC_GenericCharacter::SetJumpHeight(float NewHeight)
 	CMC->JumpZVelocity = FMath::Sqrt(FMath::Abs(2.f * CMC->GetGravityZ() * JumpHeight));
 }
 
+bool AGC_GenericCharacter::IsInCoyoteTimeWindow() const
+{
+	if (!bUseCoyoteTime) // not using coyote time
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) // world is somehow invalid
+	{
+		return false;
+	}
+
+	// Actual coyote time check
+	double TimeSinceWalkedOffLedge = World->TimeSeconds - TimeWalkedOffLedge;
+	return (TimeSinceWalkedOffLedge <= CoyoteTimeDuration);
+}
+
 bool AGC_GenericCharacter::CanJumpInternal_Implementation() const
 {
 	// Is jump allowed while we are crouched? If not crouched, this is always true.
@@ -160,7 +188,7 @@ bool AGC_GenericCharacter::CanJumpInternal_Implementation() const
 		: true;
 
 	// Offset default Unreal behaviour, as first jump usually does JumpCurrentCount += 2
-	bool bWithinJumpCount = bAllowFirstJumpWhileFalling
+	bool bWithinJumpCount = (bAllowFirstJumpWhileFalling || IsInCoyoteTimeWindow())
 		? (JumpCurrentCountPreJump < JumpMaxCount)
 		: (JumpCurrentCount < JumpMaxCount);
 
@@ -175,7 +203,7 @@ void AGC_GenericCharacter::CheckJumpInput(float DeltaTime)
 	Super::CheckJumpInput(DeltaTime);
 
 	// Offset default Unreal behaviour, as first jump usually does JumpCurrentCount += 2
-	if (bAllowFirstJumpWhileFalling)
+	if (bAllowFirstJumpWhileFalling || IsInCoyoteTimeWindow())
 	{
 		if (JumpCurrentCount - JumpCurrentCountPreJump > 1)
 		{
