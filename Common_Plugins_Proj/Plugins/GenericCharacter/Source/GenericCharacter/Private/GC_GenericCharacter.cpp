@@ -104,6 +104,20 @@ void AGC_GenericCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode,
 			{
 				Jump();
 			}
+
+			if (bUseSeparateJumpGravity)
+			{
+				CMC->GravityScale = StoredGravityScale;
+			}
+		}
+
+		// Walking -> Falling
+		if (PrevMovementMode == EMovementMode::MOVE_Walking && CMC->MovementMode == EMovementMode::MOVE_Falling)
+		{
+			if (bPressedJump)
+			{
+				CMC->bNotifyApex = true; // we want to use jump apex callbacks
+			}
 		}
 	}
 }
@@ -250,6 +264,20 @@ void AGC_GenericCharacter::CheckJumpInput(float DeltaTime)
 		{
 			JumpCurrentCount--;
 		}
+	}
+}
+
+void AGC_GenericCharacter::NotifyJumpApex()
+{
+	Super::NotifyJumpApex();
+
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	CHECK_VALID(CMC);
+
+	if (bUseSeparateJumpGravity)
+	{
+		StoredGravityScale = CMC->GravityScale;
+		CMC->GravityScale = JumpGravityScale;
 	}
 }
 

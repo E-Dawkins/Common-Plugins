@@ -104,6 +104,7 @@ public:
 
 	virtual bool CanJumpInternal_Implementation() const;
 	virtual void CheckJumpInput(float DeltaTime);
+	virtual void NotifyJumpApex() override;
 #pragma endregion
 
 #pragma region Crouch
@@ -203,9 +204,21 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (EditCondition = "bUseJumpBuffer", Units = "s", ClampMin = "0.05", ClampMax = "0.5"))
 	float JumpBufferDuration = 0.125f;
 
+	// Should gravity scale switch to a custom value after reaching jump apex?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (InlineEditConditionToggle))
+	bool bUseSeparateJumpGravity = true;
+
+	// When jump reaches its' apex, should we switch to a separate gravity scale?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (EditCondition = "bUseSeparateJumpGravity", Units = "Times", ClampMin = "1.0", ClampMax = "5.0"))
+	float JumpGravityScale = 1.75f;
+
 	// Exact 'World::TimeSeconds' that player last pressed jump input
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Jump|State")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Jump|State", meta = (Units = "s"))
 	double TimeJumpInputPressed = 0.f;
+
+	// Gravity scale we will go back to once we have landed from a jump
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Jump|State", meta = (Units = "Times"))
+	double StoredGravityScale = 0.f;
 
 	// Which input modes should crouch allow?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
