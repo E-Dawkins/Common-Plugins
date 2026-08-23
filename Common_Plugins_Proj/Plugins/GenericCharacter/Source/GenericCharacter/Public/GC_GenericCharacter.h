@@ -154,6 +154,25 @@ protected:
 	void SetSprintState(bool bNewState);
 #pragma endregion
 
+#pragma region Slide
+public:
+	// By default, set slide state to 'true'
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Slide")
+	void OnStartSlide();
+
+	// By default, set slide state to 'false'
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Slide")
+	void OnEndSlide();
+
+protected:
+	// Stores & restores CMC variables, slide enter boost, and sets 'ignore move input' state
+	void SetSlideState(bool bNewState);
+	// Controls slide exit checks
+	void TickSlideState(float DeltaSeconds);
+	bool CanSlide() const;
+
+#pragma endregion
+
 protected:
 	UPROPERTY()
 	UCameraComponent* CameraComponent;
@@ -271,6 +290,38 @@ protected:
 	// The ground speed to go back to when sprint ends
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Sprint|State", meta = (ClampMin = "150.0", ForceUnits = "cm/s"))
 	float StoredWalkSpeed = 0.f;
+
+	// Braking friction during a slide
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide")
+	float SlideGroundFriction = 0.25f;
+
+	// Braking deceleration during a slide
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide")
+	float SlideBrakingDeceleration = 256.f;
+
+	// Instant speed boost when entering a slide, 0 disables any boost
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (ForceUnits = "cm/s"))
+	float InitialSlideBoost = 200.f;
+
+	// At what speed will slide automatically end?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (ForceUnits = "cm/s"))
+	float SlideAutoExitSpeed = 200.f;
+
+	// The current slide state
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	bool bIsSliding = false;
+
+	// 'UseSeparateBrakingFriction' state to go back to on slide exit
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	bool bStoredUseSeparateBrakingFriction = false;
+
+	// 'BrakingFriction' to go back to on slide exit
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	float StoredBrakingFriction = 0.f;
+
+	// 'BrakingDeceleration' to go back to on slide exit
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	float StoredBrakingDeceleration = 0.f;
 
 };
 

@@ -65,6 +65,7 @@ void AGC_GenericCharacter::BeginPlay()
 void AGC_GenericCharacter::OnCmcUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
 {
 	TickCrouchState(DeltaSeconds);
+	TickSlideState(DeltaSeconds);
 
 	TickCmc(DeltaSeconds, OldLocation, OldVelocity);
 }
@@ -547,5 +548,96 @@ void AGC_GenericCharacter::SetSprintState(bool bNewState)
 			CMC->MaxWalkSpeed = StoredWalkSpeed;
 		}
 	}
+}
+
+void AGC_GenericCharacter::OnStartSlide_Implementation()
+{
+	SetSlideState(true);
+}
+
+void AGC_GenericCharacter::OnEndSlide_Implementation()
+{
+	SetSlideState(false);
+}
+
+void AGC_GenericCharacter::SetSlideState(bool bNewState)
+{
+	// Already in the requested state
+	if (bIsSliding == bNewState)
+	{
+		return;
+	}
+
+	// Some slide condition has failed, can not enter slide
+	if (bNewState && !CanSlide())
+	{
+		return;
+	}
+
+	bIsSliding = bNewState;
+
+	// Update CMC variables
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		if (bNewState) // enter slide
+		{
+			bStoredUseSeparateBrakingFriction = CMC->bUseSeparateBrakingFriction;
+			StoredBrakingFriction = CMC->BrakingFriction;
+			StoredBrakingDeceleration = CMC->BrakingDecelerationWalking;
+
+			CMC->bUseSeparateBrakingFriction = true;
+			CMC->BrakingFriction = SlideGroundFriction;
+			CMC->BrakingDecelerationWalking = SlideBrakingDeceleration;
+
+			// Add an optional boost when we enter slide
+			if (InitialSlideBoost > 0.f)
+			{
+				CMC->AddImpulse(GetActorForwardVector() * InitialSlideBoost, true);
+			}
+		}
+		else // exit slide
+		{
+			CMC->bUseSeparateBrakingFriction = bStoredUseSeparateBrakingFriction;
+			CMC->BrakingFriction = StoredBrakingFriction;
+			CMC->BrakingDecelerationWalking = StoredBrakingDeceleration;
+		}
+	}
+
+	// Disable move input while sliding, re-enable on slide exit
+	if (IsValid(Controller))
+	{
+		Controller->SetIgnoreMoveInput(bIsSliding);
+	}
+}
+
+void AGC_GenericCharacter::TickSlideState(float DeltaSeconds)
+{
+	// Not sliding, nothing to check
+	if (!bIsSliding)
+	{
+		return;
+	}
+
+	// Some slide condition has failed, exit slide
+	if (!CanSlide())
+	{
+		SetSlideState(false);
+	}
+}
+
+bool AGC_GenericCharacter::CanSlide() const
+{
+	if (IsCharacterFalling()) // no sliding mid-air
+	{
+		return false;
+	}
+
+	float FlattenedSpeed = FVector::VectorPlaneProject(GetVelocity(), GetActorUpVector()).Length();
+	if (FlattenedSpeed < SlideAutoExitSpeed) // below min slide speed
+	{
+		return false;
+	}
+
+	return true;
 }
 
