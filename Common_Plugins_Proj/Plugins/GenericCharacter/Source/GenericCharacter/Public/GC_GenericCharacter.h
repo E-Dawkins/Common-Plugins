@@ -22,6 +22,23 @@ enum class EGC_CrouchState : uint8
 };
 
 UENUM(BlueprintType)
+enum class EGC_SlideState : uint8
+{
+	InterpEnter,
+	Sliding,
+	InterpExit,
+	NotSliding
+};
+
+UENUM(BlueprintType)
+enum class EGC_SlideExitType : uint8
+{
+	IntoStanding,
+	IntoCrouched,
+	Invalid
+};
+
+UENUM(BlueprintType)
 enum class EGC_MovementCapability : uint8
 {
 	Crouch,
@@ -63,6 +80,11 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "GenericCharacter", meta = (DisplayName = "Tick - CMC"))
 	void TickCmc(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
 
+	void TickEyeHeight(float DeltaSeconds);
+
+	using FOnReachedEyeHeightTargetCallback = void(AGC_GenericCharacter::*)();
+	void SetEyeHeightTarget(FVector2D TargetRange, float Duration, UCurveFloat* TimeHeightCurve = nullptr, FOnReachedEyeHeightTargetCallback ReachedTargetCallback = nullptr);
+
 	virtual FVector GetPawnViewLocation() const override;
 	virtual void RecalculateBaseEyeHeight() override;
 	virtual void OnWalkingOffLedge_Implementation(const FVector& PreviousFloorImpactNormal, const FVector& PreviousFloorContactNormal, const FVector& PreviousLocation, float TimeDelta) override;
@@ -76,6 +98,19 @@ public:
 	// Checks if movement component is valid, then gets its' falling state. Defaults to false.
 	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Helpers")
 	bool IsCharacterFalling() const;
+
+	// Checks capsule is valid, then sets its unscaled half height.
+	// @param bScaleFromBottom Should capsule be offset so scaling pivots from its' lowest point?
+	UFUNCTION(BlueprintCallable, Category = "GenericCharacter|Helpers")
+	void SetCapsuleHalfHeight(float HalfHeight, bool bScaleFromBottom = false);
+
+	// Checks if re-sizing the capsule component would collide with anything.
+	// @param OutHit The result of the bounds check. Defaults to empty result if capsule / inputs are invalid.
+	// @param bScaleHeight Should height input be multiplied with current component scale?
+	// @param bCheckFromBottom Should capsule check happen pivoted from its' lowest point, or centered on actor location?
+	// @param DrawDebug Should we debug draw the bounds check? ('ForDuration' uses 3.0s lifetime)
+	UFUNCTION(BlueprintCallable, Category = "GenericCharacter|Helpers")
+	void CheckCapsuleHeight(FHitResult& OutHit, float HalfHeight, bool bScaleHeight, bool bCheckFromBottom, EDrawDebugTrace::Type DrawDebug = EDrawDebugTrace::None);
 
 public:
 	// By default, this will add movement input along flattened camera right/forward vectors
@@ -122,7 +157,8 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Crouch")
 	void OnToggleCrouch();
 
-	// Checks if we are not in the 'Uncrouched' state
+	// Checks if we are not in the 'Uncrouched' state or if we are in standard
+	// Unreal crouch state (i.e. player under a ledge but wants to UnCrouch)
 	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Crouch")
 	bool IsInCrouchedState() const;
 
@@ -133,7 +169,8 @@ protected:
 	void SetCrouched(bool bNewState);
 	// Controls crouch state machine
 	void TickCrouchState(float DeltaSeconds);
-	void InterpCrouch(float DeltaSeconds);
+
+	void OnFinishInterpCrouch();
 #pragma endregion
 
 #pragma region Sprint
@@ -164,22 +201,71 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Slide")
 	void OnEndSlide();
 
-protected:
-	// Stores & restores CMC variables, slide enter boost, and sets 'ignore move input' state
-	void SetSlideState(bool bNewState);
-	// Controls slide exit checks
-	void TickSlideState(float DeltaSeconds);
+	// By default, tries to move out of collision after failing to exit 'SlideMaxExitAttempts' times.
+	// @param DepenetrationVector The computed horizontal offset that should get us out of collision. Will be zeroed if not computable.
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Slide")
+	void OnFailedSlideExit(const FVector& DepenetrationVector);
+
+	// By default, checks that we are not falling and speed is above 'SlideAutoExitSpeed'
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GenericCharacter|Slide")
 	bool CanSlide() const;
 
+	// Checks if we are not in the 'NotSliding' state
+	UFUNCTION(BlueprintPure, Category = "GenericCharacter|Slide")
+	bool IsInSlideState() const;
+
+protected:
+	void TickSlideState(float DeltaSeconds);
+
+	virtual void StartInterpEnterSlide();
+	virtual void FinishInterpEnterSlide();
+
+	virtual void StartInterpExitSlide();
+	virtual void FinishInterpExitSlide();
+
+	// Run bounds checks for standing / crouching, or compute a location offset to get out of collision.
+	// @param OutPenetrationOffset Will be non-zero if a valid depenetration vector can be computed.
+	EGC_SlideExitType FindSuitableSlideExitType(FVector& OutPenetrationOffset);
+
+	void AttemptSlideExit();
+
+	bool SlideShouldExitToCrouched() const;
+
+	void OnFinishInterpSlide();
+	
 #pragma endregion
 
 protected:
 	UPROPERTY()
 	UCameraComponent* CameraComponent;
 
+	DECLARE_DELEGATE(FOnReachedEyeHeightTarget);
+	FOnReachedEyeHeightTarget OnReachedEyeHeightTarget;
+
+	// Should a box be drawn at the current 'PawnViewLocation'?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|General")
+	bool bDebugEyeHeight = false;
+
 	// The current eye offset from the characters feet
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State", meta = (Units = "cm"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State|EyeHeight", meta = (Units = "cm"))
 	float EyeHeightFromFeet = 0.f;
+
+	// The target eye height range where X = 0 time%, and Y = 1 time%
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State|EyeHeight")
+	FVector2D TargetEyeHeightRange = { 0.f, 0.f };
+
+	// How long the current eye height interp will take to get from 0..1 time%
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State|EyeHeight", meta = (Units = "s"))
+	float EyeHeightInterpDuration = 0.f;
+
+	// The current eye height interp time used to calculate time%
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State|EyeHeight", meta = (Units = "s"))
+	float EyeHeightInterpTime = 0.f;
+
+	// The current, optional, curve that maps time% (X) to height% (Y). Expected X range: [0..1], Y range [0..1]
+	// If not set, defaults to linear interpolation
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State|EyeHeight")
+	UCurveFloat* EyeHeightInterpCurve = nullptr;
 
 	// Exact 'World::TimeSeconds' that we walked off a ledge
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|General|State", meta = (Units = "s"))
@@ -253,22 +339,18 @@ protected:
 	float CrouchDuration = 0.3f;
 
 	// Maps crouch time% (X) to height% (Y). Expected X range: [0..1], Y range [0..1]
-	// If not set, enter crouch defaults to linear interpolation
+	// If not set, defaults to linear interpolation
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
 	UCurveFloat* EnterCrouchCurve;
 
-	// Maps crouch time% (X) to height% (Y). Expected X range: [1..0], Y range [0..1]
-	// If not set, exit crouch defaults to linear interpolation
+	// Maps crouch time% (X) to height% (Y). Expected X range: [0..1], Y range [0..1]
+	// If not set, defaults to linear interpolation
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Crouch")
 	UCurveFloat* ExitCrouchCurve;
 
 	// The current crouch state
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Crouch|State")
 	EGC_CrouchState CrouchState = EGC_CrouchState::Uncrouched;
-
-	// The current crouch time (how long crouch has been going for)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Crouch|State", meta = (Units = "s"))
-	float CrouchTime = 0.f;
 
 	// Which input modes should sprint allow?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint")
@@ -283,6 +365,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint")
 	bool bAllowSprintWhileCrouched = false;
 
+	// Should sprint be forcefully cancelled upon entering slide?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Sprint")
+	bool bCancelSprintWhenSliding = true;
+
 	// The current sprint state
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Sprint|State")
 	bool bIsSprinting = false;
@@ -292,24 +378,92 @@ protected:
 	float StoredWalkSpeed = 0.f;
 
 	// Braking friction during a slide
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (ClampMin = "0"))
 	float SlideGroundFriction = 0.25f;
 
 	// Braking deceleration during a slide
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (ClampMin = "0"))
 	float SlideBrakingDeceleration = 256.f;
 
+	// The eye height while sliding
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (Units = "cm", ClampMin = "0"))
+	float SlideEyeHeight = 24.f;
+
+	// The capsule half height while sliding
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (Units = "cm", ClampMin = "5"))
+	float SlideHalfHeight = 32.f;
+
+	// How long should slide enter interp last?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Enter", meta = (Units = "s", ClampMin = "0.1", ClampMax = "2"))
+	float SlideEnterDuration = 0.2f;
+
+	// Maps slide time% (X) to height% (Y). Expected X range: [0..1], Y range [0..1]
+	// If not set, defaults to linear interpolation
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Enter")
+	UCurveFloat* SlideEnterCurve;
+
 	// Instant speed boost when entering a slide, 0 disables any boost
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (ForceUnits = "cm/s"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Enter", meta = (ForceUnits = "cm/s", ClampMin = "0"))
 	float InitialSlideBoost = 200.f;
 
+	// How long should slide exit interp to standing last?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit", meta = (Units = "s", ClampMin = "0.1", ClampMax = "2"))
+	float SlideExitToStandingDuration = 0.25f;
+
+	// Maps slide time% (X) to height% (Y). Expected X range: [0..1], Y range [0..1]
+	// If not set, defaults to linear interpolation
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit")
+	UCurveFloat* SlideExitToStandingCurve;
+
+	// How long should slide exit interp to crouched last?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit", meta = (Units = "s", ClampMin = "0.1", ClampMax = "2"))
+	float SlideExitToCrouchedDuration = 0.15f;
+
+	// Maps slide time% (X) to height% (Y). Expected X range: [0..1], Y range [0..1]
+	// If not set, defaults to linear interpolation
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit")
+	UCurveFloat* SlideExitToCrouchedCurve;
+
 	// At what speed will slide automatically end?
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide", meta = (ForceUnits = "cm/s"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit", meta = (ForceUnits = "cm/s", ClampMin = "0"))
 	float SlideAutoExitSpeed = 200.f;
+
+	// How should the slide exit bounds check be debug drawn?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit")
+	TEnumAsByte<EDrawDebugTrace::Type> DebugSlideExitCheck = EDrawDebugTrace::None;
+
+	// How many times should we try to exit slide before calling 'OnFailedSlideExit'?
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit", meta = (ClampMin = "1", ClampMax = "7"))
+	int32 SlideMaxExitAttempts = 3;
+
+	// The interval between exit attempts
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit", meta = (Units = "s", ClampMin = "0.05", ClampMax = "0.5"))
+	float SlideExitAttemptInterval = 0.1f;
+
+	// True = slide will only exit into crouched
+	// False = slide will pick crouched/standing based on available headroom
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit")
+	bool bSlideExitToCrouched = false;
+
+	// Same as 'bSlideExitToCrouched' but for when slide auto-ends (i.e. low speed)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Slide|Exit")
+	bool bSlideAutoExitToCrouched = true;
 
 	// The current slide state
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
-	bool bIsSliding = false;
+	EGC_SlideState SlideState = EGC_SlideState::NotSliding;
+
+	// The current slide exit state, set to most suitable exit type when slide ends.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	EGC_SlideExitType SlideExitState = EGC_SlideExitType::Invalid;
+
+	// The current slide exit attempt number
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	int32 SlideExitAttempt = 0;
+
+	// Tracks whether slide was exited manually (via input) or auto-exited (i.e. low speed)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	bool bWasSlideAutoExited = false;
 
 	// 'UseSeparateBrakingFriction' state to go back to on slide exit
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")

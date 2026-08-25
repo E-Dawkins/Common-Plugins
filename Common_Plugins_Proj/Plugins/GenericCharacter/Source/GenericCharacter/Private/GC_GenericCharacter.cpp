@@ -5,6 +5,7 @@
 
 // Unreal
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 AGC_GenericCharacter::AGC_GenericCharacter()
@@ -33,6 +34,7 @@ void AGC_GenericCharacter::OnConstruction(const FTransform& Transform)
 		if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
 		{
 			StoredWalkSpeed = CMC->MaxWalkSpeed;
+			StoredGravityScale = CMC->GravityScale;
 		}
 	}
 }
@@ -67,7 +69,69 @@ void AGC_GenericCharacter::OnCmcUpdated(float DeltaSeconds, FVector OldLocation,
 	TickCrouchState(DeltaSeconds);
 	TickSlideState(DeltaSeconds);
 
+	TickEyeHeight(DeltaSeconds);
+
 	TickCmc(DeltaSeconds, OldLocation, OldVelocity);
+
+	if (bDebugEyeHeight)
+	{
+		const float Radius = GetSimpleCollisionRadius() * 0.75f;
+		const float Height = 2.5f; // cm
+
+		const FVector Extent = { Radius, Radius, Height };
+
+		DrawDebugBox(GetWorld(), GetPawnViewLocation(), Extent, GetActorQuat(), FColor::Blue);
+	}
+}
+
+void AGC_GenericCharacter::TickEyeHeight(float DeltaSeconds)
+{
+	// Ignore un-set values
+	if (EyeHeightInterpDuration <= 0.f || TargetEyeHeightRange.IsZero())
+	{
+		return;
+	}
+
+	EyeHeightInterpTime += DeltaSeconds;
+
+	// Default to time% (linear percentage)
+	float EyeHeightPercent = FMath::Clamp(EyeHeightInterpTime / EyeHeightInterpDuration, 0.f, 1.f);
+
+	// If curve is valid, re-map time% -> height%
+	if (IsValid(EyeHeightInterpCurve))
+	{
+		EyeHeightPercent = EyeHeightInterpCurve->GetFloatValue(EyeHeightPercent);
+	}
+	
+	EyeHeightFromFeet = FMath::Lerp(TargetEyeHeightRange.X, TargetEyeHeightRange.Y, EyeHeightPercent);
+
+	// We have finished interp
+	if (EyeHeightPercent == 1.f)
+	{
+		EyeHeightInterpTime = EyeHeightInterpDuration;
+		EyeHeightInterpDuration = 0.f;
+
+		// True one shot delegate
+		OnReachedEyeHeightTarget.ExecuteIfBound();
+		OnReachedEyeHeightTarget.Unbind();
+	}
+}
+
+void AGC_GenericCharacter::SetEyeHeightTarget(FVector2D TargetRange, float Duration, UCurveFloat* TimeHeightCurve, FOnReachedEyeHeightTargetCallback ReachedTargetCallback)
+{
+	float CurrentHeightPercent = FMath::GetMappedRangeValueClamped(TargetRange, FVector2D(0.f, 1.f), EyeHeightFromFeet);
+
+	EyeHeightInterpTime = (CurrentHeightPercent * Duration);
+	TargetEyeHeightRange = TargetRange;
+	EyeHeightInterpDuration = Duration;
+
+	// This is allowed to be null, as we check it in 'TickEyeHeight' anyway
+	EyeHeightInterpCurve = TimeHeightCurve;
+
+	if (ReachedTargetCallback)
+	{
+		OnReachedEyeHeightTarget.BindUObject(this, ReachedTargetCallback);
+	}
 }
 
 FVector AGC_GenericCharacter::GetPawnViewLocation() const
@@ -153,6 +217,88 @@ bool AGC_GenericCharacter::IsCharacterFalling() const
 	}
 
 	return false;
+}
+
+void AGC_GenericCharacter::SetCapsuleHalfHeight(float HalfHeight, bool bScaleFromBottom)
+{
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent(); IsValid(Capsule))
+	{
+		float PreviousHalfHeight = Capsule->GetUnscaledCapsuleHalfHeight();
+
+		Capsule->SetCapsuleHalfHeight(HalfHeight);
+
+		// Scaling happens from capsule center, so we offset it
+		// to appear to scale from the capsules' lowest point
+		if (bScaleFromBottom)
+		{
+			float CurrentHalfHeight = Capsule->GetUnscaledCapsuleHalfHeight();
+			float DeltaHalfHeight = CurrentHalfHeight - PreviousHalfHeight; // sign of this tells us up/down
+
+			Capsule->AddRelativeLocation(GetActorUpVector() * DeltaHalfHeight, true);
+		}
+	}
+}
+
+void AGC_GenericCharacter::CheckCapsuleHeight(FHitResult& OutHit, float HalfHeight, bool bScaleHeight, bool bCheckFromBottom, EDrawDebugTrace::Type DrawDebug)
+{
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	if (!IsValid(Capsule))
+	{
+		PrintDebugMessage(TEXT("'AGC_GenericCharacter::CheckCapsuleHeight' capsule component is invalid!"));
+		return;
+	}
+
+	if (HalfHeight <= 0.f)
+	{
+		PrintDebugMessage(FString::Format(TEXT("'AGC_GenericCharacter::CheckCapsuleHeight' input invalid! HalfHeight: {0}"), { HalfHeight }));
+		return;
+	}
+
+	UWorld* WorldObj = GetWorld();
+	if (!IsValid(WorldObj))
+	{
+		PrintDebugMessage(TEXT("'AGC_GenericCharacter::CheckCapsuleHeight' world is invalid!"));
+		return;
+	}
+
+	// Apply current component scale to input height
+	if (bScaleHeight)
+	{
+		FVector CurrentScale = Capsule->GetComponentTransform().GetScale3D();
+		HalfHeight *= CurrentScale.Z;
+	}
+
+	// Offset capsule so bounds are pivoted from our feet
+	FVector CapsuleCenter = GetActorLocation();
+	if (bCheckFromBottom)
+	{
+		float DeltaHalfHeight = HalfHeight - Capsule->GetScaledCapsuleHalfHeight();
+		CapsuleCenter += GetActorUpVector() * DeltaHalfHeight;
+	}
+
+	// Set params to ignore this actor in the bounds check
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(this);
+
+	// Perform bounds check
+	WorldObj->SweepSingleByChannel(
+		OutHit,
+		CapsuleCenter, CapsuleCenter,	// static sweep
+		Capsule->GetComponentQuat(),	// rotate sweep to be aligned with capsule component
+		ECC_Visibility,
+		FCollisionShape::MakeCapsule(Capsule->GetScaledCapsuleRadius(), HalfHeight),
+		Params
+	);
+
+	// Finally, should we draw a debug shape?
+	if (DrawDebug != EDrawDebugTrace::None)
+	{
+		FColor DebugColor = (OutHit.bBlockingHit ? FColor::Red : FColor::Green);
+		bool bPersistentLines = (DrawDebug == EDrawDebugTrace::Persistent);
+		float DebugLifeTime = (DrawDebug == EDrawDebugTrace::ForDuration ? 3.f : -1.f);
+
+		DrawDebugCapsule(WorldObj, CapsuleCenter, HalfHeight, Capsule->GetScaledCapsuleRadius(), Capsule->GetComponentQuat(), DebugColor, bPersistentLines, DebugLifeTime);
+	}
 }
 
 void AGC_GenericCharacter::OnMove_Implementation(const FVector2D& MoveDirection)
@@ -327,7 +473,9 @@ void AGC_GenericCharacter::OnToggleCrouch_Implementation()
 
 bool AGC_GenericCharacter::IsInCrouchedState() const
 {
-	return CrouchState != EGC_CrouchState::Uncrouched;
+	// We check our own crouched state first, but also need to check Unreal's
+	// crouched state in the case that the player is trying to uncrouch.
+	return (CrouchState != EGC_CrouchState::Uncrouched) || IsCrouched();
 }
 
 void AGC_GenericCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
@@ -356,6 +504,9 @@ void AGC_GenericCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfH
 	// Interp after Unreal has scaled our capsule to standing height.
 	// This avoids any possible eye height clipping issues
 	CrouchState = EGC_CrouchState::InterpToUncrouched;
+
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	SetEyeHeightTarget({ CMC->CrouchedHalfHeight + CrouchedEyeHeight, GetDefaultHalfHeight() + BaseEyeHeight }, CrouchDuration, ExitCrouchCurve, &AGC_GenericCharacter::OnFinishInterpCrouch);
 }
 
 void AGC_GenericCharacter::SetCrouched(bool bNewState)
@@ -388,6 +539,9 @@ void AGC_GenericCharacter::SetCrouched(bool bNewState)
 		// Interp before Unreal has scaled our capsule to crouched height.
 		// This avoids any possible eye height clipping issues
 		CrouchState = EGC_CrouchState::InterpToCrouched;
+
+		UCharacterMovementComponent* CMC = GetCharacterMovement();
+		SetEyeHeightTarget({ GetDefaultHalfHeight() + BaseEyeHeight, CMC->CrouchedHalfHeight + CrouchedEyeHeight }, CrouchDuration, EnterCrouchCurve, &AGC_GenericCharacter::OnFinishInterpCrouch);
 	}
 	else
 	{
@@ -395,6 +549,9 @@ void AGC_GenericCharacter::SetCrouched(bool bNewState)
 		{
 			// Mid-way through interp, just reverse direction
 			CrouchState = EGC_CrouchState::InterpToUncrouched;
+
+			UCharacterMovementComponent* CMC = GetCharacterMovement();
+			SetEyeHeightTarget({ CMC->CrouchedHalfHeight + CrouchedEyeHeight, GetDefaultHalfHeight() + BaseEyeHeight }, CrouchDuration, ExitCrouchCurve, &AGC_GenericCharacter::OnFinishInterpCrouch);
 		}
 		else
 		{
@@ -426,18 +583,6 @@ void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
 
 			break;
 		}
-		case EGC_CrouchState::InterpToCrouched:
-		{
-			InterpCrouch(DeltaSeconds);
-
-			break;
-		}
-		case EGC_CrouchState::InterpToUncrouched:
-		{
-			InterpCrouch(-DeltaSeconds);
-
-			break;
-		}
 		case EGC_CrouchState::FallingRequestCrouched:
 		{
 			if (!IsCharacterFalling())
@@ -459,40 +604,19 @@ void AGC_GenericCharacter::TickCrouchState(float DeltaSeconds)
 	}
 }
 
-void AGC_GenericCharacter::InterpCrouch(float DeltaSeconds)
+void AGC_GenericCharacter::OnFinishInterpCrouch()
 {
-	CrouchTime += DeltaSeconds;
-
-	float CrouchPercent = FMath::Clamp(CrouchTime / CrouchDuration, 0.f, 1.f);
-
-	if (CrouchPercent == 1.f)
+	if (CrouchState == EGC_CrouchState::InterpToCrouched)
 	{
 		CrouchState = EGC_CrouchState::Crouched;
-		CrouchTime = CrouchDuration;
 	}
-	else if (CrouchPercent == 0.f)
+	else if (CrouchState == EGC_CrouchState::InterpToUncrouched)
 	{
 		CrouchState = EGC_CrouchState::Uncrouched;
-		CrouchTime = 0.f;
 	}
-
-	// Interp eye height
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	else
 	{
-		float BaseEyeHeightFromFeet = GetDefaultHalfHeight() + BaseEyeHeight;
-		float CrouchedEyeHeightFromFeet = CMC->CrouchedHalfHeight + CrouchedEyeHeight;
-
-		// If valid, use curve to map time/height percentages
-		if (CrouchState == EGC_CrouchState::InterpToCrouched && IsValid(EnterCrouchCurve))
-		{
-			CrouchPercent = EnterCrouchCurve->GetFloatValue(CrouchPercent);
-		}
-		else if (CrouchState == EGC_CrouchState::InterpToUncrouched && IsValid(ExitCrouchCurve))
-		{
-			CrouchPercent = ExitCrouchCurve->GetFloatValue(1.f - CrouchPercent);
-		}
-
-		EyeHeightFromFeet = FMath::Lerp(BaseEyeHeightFromFeet, CrouchedEyeHeightFromFeet, CrouchPercent);
+		PrintDebugMessage("'OnFinishInterpCrouch' called while in a non-interp crouch state!");
 	}
 }
 
@@ -552,80 +676,70 @@ void AGC_GenericCharacter::SetSprintState(bool bNewState)
 
 void AGC_GenericCharacter::OnStartSlide_Implementation()
 {
-	SetSlideState(true);
+	// Already sliding, can not enter slide
+	if (SlideState <= EGC_SlideState::Sliding)
+	{
+		return;
+	}
+
+	// Some condition failed, can not enter slide
+	if (!CanSlide())
+	{
+		return;
+	}
+
+	// We are mid-way through interp, reverse it
+	if (SlideState != EGC_SlideState::NotSliding)
+	{
+		SlideState = EGC_SlideState::InterpEnter;
+	}
+	else
+	{
+		StartInterpEnterSlide();
+	}
 }
 
 void AGC_GenericCharacter::OnEndSlide_Implementation()
 {
-	SetSlideState(false);
-}
-
-void AGC_GenericCharacter::SetSlideState(bool bNewState)
-{
-	// Already in the requested state
-	if (bIsSliding == bNewState)
+	// Already not sliding, can not exit slide
+	if (SlideState > EGC_SlideState::Sliding)
 	{
-		return;
-	}
+		// Edge case where slide was previously auto-exited via falling off a ledge.
+		// In this case, player wants to run manual exit slide logic... skip early return.
+		bool bPreviouslyFellOffLedge = (IsCharacterFalling() && bWasSlideAutoExited);
 
-	// Some slide condition has failed, can not enter slide
-	if (bNewState && !CanSlide())
-	{
-		return;
-	}
-
-	bIsSliding = bNewState;
-
-	// Update CMC variables
-	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
-	{
-		if (bNewState) // enter slide
+		if (!bPreviouslyFellOffLedge)
 		{
-			bStoredUseSeparateBrakingFriction = CMC->bUseSeparateBrakingFriction;
-			StoredBrakingFriction = CMC->BrakingFriction;
-			StoredBrakingDeceleration = CMC->BrakingDecelerationWalking;
-
-			CMC->bUseSeparateBrakingFriction = true;
-			CMC->BrakingFriction = SlideGroundFriction;
-			CMC->BrakingDecelerationWalking = SlideBrakingDeceleration;
-
-			// Add an optional boost when we enter slide
-			if (InitialSlideBoost > 0.f)
-			{
-				CMC->AddImpulse(GetActorForwardVector() * InitialSlideBoost, true);
-			}
-		}
-		else // exit slide
-		{
-			CMC->bUseSeparateBrakingFriction = bStoredUseSeparateBrakingFriction;
-			CMC->BrakingFriction = StoredBrakingFriction;
-			CMC->BrakingDecelerationWalking = StoredBrakingDeceleration;
+			return;
 		}
 	}
 
-	// Disable move input while sliding, re-enable on slide exit
-	if (IsValid(Controller))
-	{
-		Controller->SetIgnoreMoveInput(bIsSliding);
-	}
+	// Attempt logic is contained within the 'AttemptSlideExit' function
+	GetWorldTimerManager().SetTimerForNextTick(this, &AGC_GenericCharacter::AttemptSlideExit);
+
+	bWasSlideAutoExited = false;
 }
 
-void AGC_GenericCharacter::TickSlideState(float DeltaSeconds)
+void AGC_GenericCharacter::OnFailedSlideExit_Implementation(const FVector& DepenetrationVector)
 {
-	// Not sliding, nothing to check
-	if (!bIsSliding)
+	// A depenetration vector has been computed, move out of collision
+	if (!DepenetrationVector.IsNearlyZero())
 	{
-		return;
+		PrintDebugMessage("'OnFailedSlideExit' called with non-zero depenetration vector, trying to move out of collision.");
+
+		FHitResult SweepResult;
+		AddActorWorldOffset(DepenetrationVector, true, &SweepResult);
+
+		if (!SweepResult.bBlockingHit)
+		{
+			return;
+		}
 	}
 
-	// Some slide condition has failed, exit slide
-	if (!CanSlide())
-	{
-		SetSlideState(false);
-	}
+	PrintDebugMessage("'OnFailedSlideExit' failed to move out of collision, slide exit has completely failed!");
 }
 
-bool AGC_GenericCharacter::CanSlide() const
+bool AGC_GenericCharacter::CanSlide_Implementation() const
 {
 	if (IsCharacterFalling()) // no sliding mid-air
 	{
@@ -639,5 +753,246 @@ bool AGC_GenericCharacter::CanSlide() const
 	}
 
 	return true;
+}
+
+bool AGC_GenericCharacter::IsInSlideState() const
+{
+	return SlideState != EGC_SlideState::NotSliding;
+}
+
+void AGC_GenericCharacter::TickSlideState(float DeltaSeconds)
+{
+	// We are currently sliding, but some slide condition failed, force exit slide
+	if (SlideState <= EGC_SlideState::Sliding && !CanSlide())
+	{
+		OnEndSlide();
+		bWasSlideAutoExited = true; // override 'OnEndSlide' setting this to 'false'
+	}
+}
+
+void AGC_GenericCharacter::StartInterpEnterSlide()
+{
+	SlideState = EGC_SlideState::InterpEnter;
+
+	SetEyeHeightTarget({ GetDefaultHalfHeight() + BaseEyeHeight, SlideHalfHeight + SlideEyeHeight }, SlideEnterDuration, SlideEnterCurve, &AGC_GenericCharacter::OnFinishInterpSlide);
+
+	// Store CMC variables and set them to sliding variables
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		bStoredUseSeparateBrakingFriction = CMC->bUseSeparateBrakingFriction;
+		StoredBrakingFriction = CMC->BrakingFriction;
+		StoredBrakingDeceleration = CMC->BrakingDecelerationWalking;
+
+		CMC->bUseSeparateBrakingFriction = true;
+		CMC->BrakingFriction = SlideGroundFriction;
+		CMC->BrakingDecelerationWalking = SlideBrakingDeceleration;
+
+		// Add an optional boost when we enter slide.
+		// This has to happen when we start interp, otherwise spamming gives infinite boost.
+		if (InitialSlideBoost > 0.f)
+		{
+			CMC->AddImpulse(GetActorForwardVector() * InitialSlideBoost, true);
+		}
+	}
+
+	// Ignore move input while sliding
+	// We need to explicitly check the 'ignore move input' state as it is an integer
+	// that is incremented/decremented but we need it to behave like a boolean (0/1)
+	if (IsValid(Controller) && !Controller->IsMoveInputIgnored())
+	{
+		Controller->SetIgnoreMoveInput(true);
+	}
+
+	// Cancel sprint
+	if (bCancelSprintWhenSliding)
+	{
+		SetSprintState(false);
+	}
+}
+
+void AGC_GenericCharacter::FinishInterpEnterSlide()
+{
+	SlideState = EGC_SlideState::Sliding;
+
+	// We set capsule height after eye height interp,
+	// this avoids any eye height clipping issues
+	SetCapsuleHalfHeight(SlideHalfHeight, true);
+}
+
+void AGC_GenericCharacter::StartInterpExitSlide()
+{
+	SlideState = EGC_SlideState::InterpExit;
+
+	// We set capsule height before eye height interp,
+	// this avoids any eye height clipping issues
+
+	if (SlideExitState == EGC_SlideExitType::IntoCrouched)
+	{
+		if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+		{
+			SetCapsuleHalfHeight(CMC->CrouchedHalfHeight, true);
+			SetEyeHeightTarget({ SlideHalfHeight + SlideEyeHeight, CMC->CrouchedHalfHeight + CrouchedEyeHeight }, SlideExitToCrouchedDuration, SlideExitToCrouchedCurve, &AGC_GenericCharacter::OnFinishInterpSlide);
+
+			return;
+		}
+	}
+	
+	// Default to 'standing' height
+	SetCapsuleHalfHeight(GetDefaultHalfHeight(), true);
+	SetEyeHeightTarget({ SlideHalfHeight + SlideEyeHeight, GetDefaultHalfHeight() + BaseEyeHeight }, SlideExitToStandingDuration, SlideExitToStandingCurve, &AGC_GenericCharacter::OnFinishInterpSlide);
+}
+
+void AGC_GenericCharacter::FinishInterpExitSlide()
+{
+	SlideState = EGC_SlideState::NotSliding;
+
+	// Restore CMC variables
+	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
+	{
+		CMC->bUseSeparateBrakingFriction = bStoredUseSeparateBrakingFriction;
+		CMC->BrakingFriction = StoredBrakingFriction;
+		CMC->BrakingDecelerationWalking = StoredBrakingDeceleration;
+	}
+
+	// Re-enable move input
+	// We need to explicitly check the 'ignore move input' state as it is an integer
+	// that is incremented/decremented but we need it to behave like a boolean (0/1)
+	if (IsValid(Controller) && Controller->IsMoveInputIgnored())
+	{
+		Controller->SetIgnoreMoveInput(false);
+	}
+
+	// Since slide runs its' own eye height interp, we must manually manage crouch state
+	if (SlideExitState == EGC_SlideExitType::IntoCrouched)
+	{
+		bool bShouldExitToCrouched = SlideShouldExitToCrouched();
+
+		// Player has slid off of a ledge, but we are not allowed to 'uncrouch' while mid-air
+		if (IsCharacterFalling() && !bShouldExitToCrouched)
+		{
+			Crouch();
+			CrouchState = EGC_CrouchState::FallingRequestUncrouched;
+		}
+		else
+		{
+			// Either player wants to enter crouch, or they are still holding crouch input
+			if (bShouldExitToCrouched || bWasSlideAutoExited)
+			{
+				CrouchState = EGC_CrouchState::Crouched;
+			}
+			else
+			{
+				// If we reach this point, player doesn't want to crouch but was forced to (under a ledge)
+				Crouch();
+				CrouchState = EGC_CrouchState::Uncrouched;
+			}
+		}
+	}
+}
+
+EGC_SlideExitType AGC_GenericCharacter::FindSuitableSlideExitType(FVector& OutDepenetrationOffset)
+{
+	UCapsuleComponent* Capsule = GetCapsuleComponent();
+	UCharacterMovementComponent* CMC = GetCharacterMovement();
+
+	if (!IsValid(Capsule) || !IsValid(CMC))
+	{
+		PrintDebugMessage("Invalid capsule / movement component in 'AGC_GenericCharacter::FindSuitableSlideExitType'!");
+		return EGC_SlideExitType::Invalid;
+	}
+
+	// Standing
+	FHitResult HitResult;
+	CheckCapsuleHeight(HitResult, GetDefaultHalfHeight(), false, true, DebugSlideExitCheck);
+
+	// Note: if falling, favor crouched exit
+	if (!(IsCharacterFalling() || SlideShouldExitToCrouched() || HitResult.bBlockingHit))
+	{
+		return EGC_SlideExitType::IntoStanding;
+	}
+	
+	// Add a little offset so that player will definitely be out of collision
+	HitResult.PenetrationDepth += 5.f;
+
+	// Use standing bounds check for depenetration vector, as the crouching bounds
+	// check usually outputs a downwards depenetration vector, but we want sideways only.
+	OutDepenetrationOffset = FVector::VectorPlaneProject(HitResult.PenetrationDepth * HitResult.Normal, GetActorUpVector());
+
+	// Crouching
+	CheckCapsuleHeight(HitResult, CMC->CrouchedHalfHeight, true, true, DebugSlideExitCheck);
+	if (!HitResult.bBlockingHit)
+	{
+		return EGC_SlideExitType::IntoCrouched;
+	}
+
+	return EGC_SlideExitType::Invalid;
+}
+
+void AGC_GenericCharacter::AttemptSlideExit()
+{
+	SlideExitAttempt++;
+
+	FVector DepenetrationVector;
+	SlideExitState = FindSuitableSlideExitType(DepenetrationVector);
+
+	// Failed to exit slide
+	if (SlideExitState == EGC_SlideExitType::Invalid)
+	{
+		// Try to exit slide after interval, X times
+		if (SlideExitAttempt < SlideMaxExitAttempts)
+		{
+			FTimerHandle Handle;
+			GetWorldTimerManager().SetTimer(Handle, this, &AGC_GenericCharacter::AttemptSlideExit, SlideExitAttemptInterval);
+
+			return;
+		}
+		// Still can not exit slide after X attempts
+		else
+		{
+			OnFailedSlideExit(DepenetrationVector);
+
+			// Set default slide exit type
+			SlideExitState = (SlideShouldExitToCrouched() ? EGC_SlideExitType::IntoCrouched : EGC_SlideExitType::IntoStanding);
+		}
+	}
+
+	// Reset attempt count
+	SlideExitAttempt = 0;
+
+	// We are mid-way through interp, reverse it
+	if (SlideState < EGC_SlideState::Sliding)
+	{
+		SlideState = EGC_SlideState::InterpExit;
+	}
+	else
+	{
+		StartInterpExitSlide();
+	}
+}
+
+bool AGC_GenericCharacter::SlideShouldExitToCrouched() const
+{
+	if (bWasSlideAutoExited)
+	{
+		return bSlideAutoExitToCrouched;
+	}
+
+	return bSlideExitToCrouched;
+}
+
+void AGC_GenericCharacter::OnFinishInterpSlide()
+{
+	if (SlideState == EGC_SlideState::InterpEnter)
+	{
+		FinishInterpEnterSlide();
+	}
+	else if (SlideState == EGC_SlideState::InterpExit)
+	{
+		FinishInterpExitSlide();
+	}
+	else
+	{
+		PrintDebugMessage("'OnFinishInterpSlide' called while in a non-interp slide state!");
+	}
 }
 
