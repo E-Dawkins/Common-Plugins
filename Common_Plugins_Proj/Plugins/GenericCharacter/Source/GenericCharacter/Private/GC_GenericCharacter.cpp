@@ -608,6 +608,14 @@ void AGC_GenericCharacter::OnFinishInterpCrouch()
 {
 	if (CrouchState == EGC_CrouchState::InterpToCrouched)
 	{
+		// This is an edge case where player exited slide -> start crouch
+		// But we still need slide to reset friction values
+		if (IsInSlideState())
+		{
+			SlideExitState = EGC_SlideExitType::Invalid;
+			FinishInterpExitSlide();
+		}
+
 		CrouchState = EGC_CrouchState::Crouched;
 	}
 	else if (CrouchState == EGC_CrouchState::InterpToUncrouched)
@@ -688,21 +696,22 @@ void AGC_GenericCharacter::OnStartSlide_Implementation()
 		return;
 	}
 
-	// We are mid-way through interp, reverse it
-	if (SlideState != EGC_SlideState::NotSliding)
+	// Not interping, run start logic
+	if (SlideState == EGC_SlideState::NotSliding)
 	{
-		SlideState = EGC_SlideState::InterpEnter;
-	}
-	else
-	{
+		// This is where CMC data gets stored, so only run it when we first enter slide
 		StartInterpEnterSlide();
 	}
+
+	SlideState = EGC_SlideState::InterpEnter;
+
+	SetEyeHeightTarget({ GetDefaultHalfHeight() + BaseEyeHeight, SlideHalfHeight + SlideEyeHeight }, SlideEnterDuration, SlideEnterCurve, &AGC_GenericCharacter::OnFinishInterpSlide);
 }
 
 void AGC_GenericCharacter::OnEndSlide_Implementation()
 {
 	// Already not sliding, can not exit slide
-	if (SlideState > EGC_SlideState::Sliding)
+	if (SlideState == EGC_SlideState::NotSliding)
 	{
 		// Edge case where slide was previously auto-exited via falling off a ledge.
 		// In this case, player wants to run manual exit slide logic... skip early return.
@@ -773,8 +782,6 @@ void AGC_GenericCharacter::TickSlideState(float DeltaSeconds)
 void AGC_GenericCharacter::StartInterpEnterSlide()
 {
 	SlideState = EGC_SlideState::InterpEnter;
-
-	SetEyeHeightTarget({ GetDefaultHalfHeight() + BaseEyeHeight, SlideHalfHeight + SlideEyeHeight }, SlideEnterDuration, SlideEnterCurve, &AGC_GenericCharacter::OnFinishInterpSlide);
 
 	// Store CMC variables and set them to sliding variables
 	if (UCharacterMovementComponent* CMC = GetCharacterMovement(); IsValid(CMC))
@@ -959,15 +966,7 @@ void AGC_GenericCharacter::AttemptSlideExit()
 	// Reset attempt count
 	SlideExitAttempt = 0;
 
-	// We are mid-way through interp, reverse it
-	if (SlideState < EGC_SlideState::Sliding)
-	{
-		SlideState = EGC_SlideState::InterpExit;
-	}
-	else
-	{
-		StartInterpExitSlide();
-	}
+	StartInterpExitSlide();
 }
 
 bool AGC_GenericCharacter::SlideShouldExitToCrouched() const
