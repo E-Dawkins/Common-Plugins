@@ -277,7 +277,7 @@ protected:
 
 	// Should look input 'y' be inverted?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Look")
-	bool bInvertY = true;
+	bool bInvertY = false;
 
 	// How high should a single jump reach?
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "0", Units = "cm"), BlueprintSetter = SetJumpHeight)
