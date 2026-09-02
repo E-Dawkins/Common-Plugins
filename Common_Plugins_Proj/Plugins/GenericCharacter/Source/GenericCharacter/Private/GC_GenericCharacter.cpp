@@ -153,6 +153,11 @@ void AGC_GenericCharacter::OnWalkingOffLedge_Implementation(const FVector& Previ
 	{
 		TimeWalkedOffLedge = World->TimeSeconds; // stored mainly for coyote time logic
 	}
+
+	if (IsInSlideState())
+	{
+		bDidSlideOffLedge = true;
+	}
 }
 
 void AGC_GenericCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
@@ -875,7 +880,7 @@ void AGC_GenericCharacter::FinishInterpExitSlide()
 		bool bShouldExitToCrouched = SlideShouldExitToCrouched();
 
 		// Player has slid off of a ledge, but we are not allowed to 'uncrouch' while mid-air
-		if (IsCharacterFalling() && !bShouldExitToCrouched)
+		if (bDidSlideOffLedge && !bShouldExitToCrouched)
 		{
 			Crouch();
 			CrouchState = EGC_CrouchState::FallingRequestUncrouched;
@@ -993,5 +998,9 @@ void AGC_GenericCharacter::OnFinishInterpSlide()
 	{
 		PrintDebugMessage("'OnFinishInterpSlide' called while in a non-interp slide state!");
 	}
+
+	// This must happen last so we are able to check its'
+	// state in one of the finish interp functions.
+	bDidSlideOffLedge = false;
 }
 

@@ -465,6 +465,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
 	bool bWasSlideAutoExited = false;
 
+	// Tracks whether player slid off a ledge or not. Gets reset in 'OnFinishInterpSlide'.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
+	bool bDidSlideOffLedge = false;
+
 	// 'UseSeparateBrakingFriction' state to go back to on slide exit
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GenericCharacter|Slide|State")
 	bool bStoredUseSeparateBrakingFriction = false;
