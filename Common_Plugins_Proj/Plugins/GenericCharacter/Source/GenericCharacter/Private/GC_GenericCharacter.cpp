@@ -228,8 +228,13 @@ void AGC_GenericCharacter::SetCapsuleHalfHeight(float HalfHeight, bool bScaleFro
 {
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent(); IsValid(Capsule))
 	{
-		float PreviousHalfHeight = Capsule->GetUnscaledCapsuleHalfHeight();
+		float CapsuleRadius = Capsule->GetUnscaledCapsuleRadius();
+		if (HalfHeight < CapsuleRadius)
+		{
+			PrintDebugMessage(FString::Format(TEXT("Tried to set capsule half height to '{0}' but was clamped to capsule radius '{1}'!"), { HalfHeight, CapsuleRadius }));
+		}
 
+		float PreviousHalfHeight = Capsule->GetUnscaledCapsuleHalfHeight();
 		Capsule->SetCapsuleHalfHeight(HalfHeight);
 
 		// Scaling happens from capsule center, so we offset it
