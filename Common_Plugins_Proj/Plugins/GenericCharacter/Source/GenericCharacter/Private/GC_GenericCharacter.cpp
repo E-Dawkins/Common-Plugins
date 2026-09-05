@@ -19,6 +19,11 @@ AGC_GenericCharacter::AGC_GenericCharacter()
 		CMC->bCanWalkOffLedgesWhenCrouching = true;
 		CMC->NavAgentProps.bCanCrouch = true;
 	}
+
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent(); IsValid(Capsule))
+	{
+		Capsule->SetCapsuleRadius(32.f);
+	}
 }
 
 void AGC_GenericCharacter::OnConstruction(const FTransform& Transform)
