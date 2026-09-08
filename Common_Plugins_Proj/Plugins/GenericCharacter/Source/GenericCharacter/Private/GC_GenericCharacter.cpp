@@ -342,6 +342,12 @@ void AGC_GenericCharacter::OnLook_Implementation(FVector2D LookDirection)
 
 void AGC_GenericCharacter::OnJump_Implementation()
 {
+	// 'SetJumpHeight' will re-calculate jump force for us
+	if (bRecalculateForceOnJump)
+	{
+		SetJumpHeight(JumpHeight);
+	}
+
 	Jump();
 
 	if (UWorld* World = GetWorld(); IsValid(World))

@@ -283,6 +283,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump", meta = (ClampMin = "0", Units = "cm"), BlueprintSetter = SetJumpHeight)
 	float JumpHeight = 150.f;
 
+	// Should jump velocity be re-calculated every time a jump is performed?
+	// For use in situations such as a double-jump attempted after jump gravity scale has been applied.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump")
+	bool bRecalculateForceOnJump = true;
+
 	// Should first jump be allowed mid-air? i.e. jump count = 2, would allow 2 mid-air jumps
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GenericCharacter|Jump")
 	bool bAllowFirstJumpWhileFalling = false;
