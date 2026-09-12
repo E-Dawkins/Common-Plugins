@@ -6,7 +6,10 @@
 // Unreal
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Curves/CurveFloat.h"
+#include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "TimerManager.h"
 
 AGC_GenericCharacter::AGC_GenericCharacter()
 {
